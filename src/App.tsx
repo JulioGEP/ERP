@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import Container from 'react-bootstrap/Container';
 import Stack from 'react-bootstrap/Stack';
-import CalendarView from './components/calendar/CalendarView.tsx';
-import DealsBoard from './components/deals/DealsBoard.tsx';
-import HeaderBar from './components/layout/HeaderBar.tsx';
+import CalendarView from './components/calendar/CalendarView';
+import DealsBoard from './components/deals/DealsBoard';
+import HeaderBar from './components/layout/HeaderBar';
 import './App.scss';
 
 type TabKey = 'calendar' | 'backlog';

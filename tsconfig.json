@@ -14,7 +14,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["node"]
+    "types": ["node", "@netlify/functions"]
   },
   "include": ["src", "netlify/functions"],
   "references": [{ "path": "./tsconfig.node.json" }]

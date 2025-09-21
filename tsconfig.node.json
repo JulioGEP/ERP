@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowSyntheticDefaultImports": true,
-    "types": ["node"]
+    "types": ["node", "@netlify/functions"]
   },
   "include": ["vite.config.ts", "netlify/functions/**/*.ts"]
 }
