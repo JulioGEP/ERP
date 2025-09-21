@@ -6,7 +6,7 @@ import Card from 'react-bootstrap/Card';
 import Placeholder from 'react-bootstrap/Placeholder';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
-import { fetchDeals, DealRecord } from '../../services/deals.ts';
+import { fetchDeals, DealRecord } from '../../services/deals';
 
 const renderRow = (deal: DealRecord) => (
   <tr key={deal.id}>
