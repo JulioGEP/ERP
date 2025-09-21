@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+
+:root {
+  --brand-primary: #004c97;
+  --brand-secondary: #0097c7;
+  --brand-accent: #f9b233;
+  --surface-base: #ffffff;
+  --surface-muted: #f4f7fb;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --shadow-soft: 0 22px 45px rgba(15, 23, 42, 0.08);
+}
+
+body {
+  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+
+.text-primary {
+  color: var(--brand-primary) !important;
+}
+
+.btn-primary,
+.badge.bg-primary {
+  background: var(--brand-primary) !important;
+  border-color: var(--brand-primary) !important;
+}
+
+.btn-outline-primary {
+  color: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+  color: #fff;
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+.nav-tabs-clean .nav-link {
+  padding: 0.85rem 1.5rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: none;
+  border-bottom: 3px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nav-tabs-clean .nav-link.active,
+.nav-tabs-clean .nav-link:focus,
+.nav-tabs-clean .nav-link:hover {
+  color: var(--brand-primary);
+  border-color: var(--brand-primary);
+  background-color: transparent;
+}
+
+.badge.bg-info {
+  background: rgba(0, 151, 199, 0.2) !important;
+}
+
+.tracking-wide {
+  letter-spacing: 0.12em;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+}
+
+.fc .fc-button-primary {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+.fc .fc-button-primary:not(:disabled):hover {
+  background: var(--brand-secondary);
+  border-color: var(--brand-secondary);
+}
+
+.fc .fc-daygrid-day-number,
+.fc .fc-col-header-cell-cushion {
+  color: var(--text-secondary);
+}
+
+.fc-theme-standard td,
+.fc-theme-standard th {
+  border-color: rgba(15, 23, 42, 0.08);
+}

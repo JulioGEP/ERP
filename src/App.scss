@@ -1,0 +1,29 @@
+.app-shell {
+  min-height: 100vh;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+
+.app-main {
+  margin-top: 0;
+}
+
+.calendar-card,
+.deals-card {
+  background: var(--surface-base);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-soft);
+  padding: 1.5rem;
+}
+
+.calendar-card .fc,
+.deals-card table {
+  font-size: 0.95rem;
+}
+
+@media (max-width: 768px) {
+  .calendar-card,
+  .deals-card {
+    padding: 1rem;
+  }
+}
