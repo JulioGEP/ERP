@@ -2,6 +2,7 @@ import Container from 'react-bootstrap/Container';
 import Nav from 'react-bootstrap/Nav';
 import Navbar from 'react-bootstrap/Navbar';
 import Badge from 'react-bootstrap/Badge';
+import logo from '../../styles/GEP-Group_Logotipo_horizontal.png';
 
 interface HeaderBarProps {
   activeKey: 'calendar' | 'backlog';
@@ -12,18 +13,18 @@ const HeaderBar = ({ activeKey, onNavigate }: HeaderBarProps) => (
   <header className="app-header shadow-sm">
     <Navbar bg="white" className="py-3" expand="lg">
       <Container fluid>
-        <Navbar.Brand className="d-flex align-items-center gap-2 fw-semibold text-uppercase text-primary">
-          <img src="/favicon.svg" width="32" height="32" alt="GEP Group" />
+        <Navbar.Brand className="d-flex align-items-center gap-3">
+          <img src={logo} alt="GEP Group" height={40} />
           <span>GEP Group · Planificación</span>
         </Navbar.Brand>
         <div className="d-none d-lg-block">
-          <Badge bg="primary" pill className="text-uppercase tracking-wide">
+          <Badge pill className="app-header-badge text-uppercase tracking-wide">
             Primera iteración
           </Badge>
         </div>
       </Container>
     </Navbar>
-    <div className="border-top border-bottom bg-white">
+    <div className="app-header-nav">
       <Container fluid>
         <Nav
           activeKey={activeKey}
