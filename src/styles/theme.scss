@@ -1,20 +1,56 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
 
 :root {
-  --brand-primary: #004c97;
-  --brand-secondary: #0097c7;
-  --brand-accent: #f9b233;
+  --brand-primary: #e10a2c;
+  --brand-secondary: #3c3c3b;
+  --brand-accent: #dadada;
   --surface-base: #ffffff;
-  --surface-muted: #f4f7fb;
-  --text-primary: #1f2937;
-  --text-secondary: #6b7280;
-  --shadow-soft: 0 22px 45px rgba(15, 23, 42, 0.08);
+  --surface-muted: #f7f7f7;
+  --text-primary: #000000;
+  --text-secondary: #3c3c3b;
+  --shadow-soft: 0 18px 36px rgba(60, 60, 59, 0.12);
 }
 
 body {
   font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--surface-muted);
   color: var(--text-primary);
+  line-height: 1.6;
+}
+
+h1,
+.h1,
+h2,
+.h2,
+.fc .fc-toolbar-title {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+h3,
+.h3,
+h4,
+.h4 {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+p {
+  font-weight: 400;
+}
+
+.card-title {
+  font-weight: 700;
+}
+
+.card-subtitle {
+  font-weight: 300;
+  color: var(--text-secondary) !important;
+}
+
+.text-secondary {
+  color: rgba(60, 60, 59, 0.72) !important;
 }
 
 .text-primary {
@@ -27,9 +63,14 @@ body {
   border-color: var(--brand-primary) !important;
 }
 
+.btn-primary {
+  font-weight: 600;
+}
+
 .btn-outline-primary {
   color: var(--brand-primary);
   border-color: var(--brand-primary);
+  font-weight: 600;
 }
 
 .btn-outline-primary:hover,
@@ -41,12 +82,12 @@ body {
 
 .nav-tabs-clean .nav-link {
   padding: 0.85rem 1.5rem;
-  font-weight: 500;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: rgba(60, 60, 59, 0.72);
   border: none;
   border-bottom: 3px solid transparent;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.22em;
 }
 
 .nav-tabs-clean .nav-link.active,
@@ -58,17 +99,16 @@ body {
 }
 
 .badge.bg-info {
-  background: rgba(0, 151, 199, 0.2) !important;
+  background: rgba(225, 10, 44, 0.12) !important;
+  color: var(--brand-primary) !important;
 }
 
 .tracking-wide {
-  letter-spacing: 0.12em;
+  letter-spacing: 0.22em;
 }
 
 .fc .fc-toolbar-title {
   font-size: 1.4rem;
-  font-weight: 600;
-  color: var(--brand-primary);
 }
 
 .fc .fc-button-primary {
@@ -88,5 +128,19 @@ body {
 
 .fc-theme-standard td,
 .fc-theme-standard th {
-  border-color: rgba(15, 23, 42, 0.08);
+  border-color: rgba(60, 60, 59, 0.12);
+}
+
+.table thead th {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--brand-secondary);
+  background: var(--brand-accent);
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background: rgba(225, 10, 44, 0.04);
 }
