@@ -1,3 +1,5 @@
+import { createEmptyFilters, FilterKey } from './dealFilters';
+
 export interface CalendarEvent {
   id: string;
   dealId: number;
@@ -14,6 +16,7 @@ export interface CalendarEvent {
   trainers: string[];
   mobileUnits: string[];
   logisticsInfo: string | null;
+  filterValues: Record<FilterKey, string>;
 }
 
 const STORAGE_KEY = 'erp-calendar-events-v1';
@@ -78,6 +81,22 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     }
   }
 
+  const parseFilterValues = (input: unknown): Record<FilterKey, string> => {
+    const base = createEmptyFilters();
+
+    if (!input || typeof input !== 'object') {
+      return base;
+    }
+
+    const candidate = input as Partial<Record<FilterKey, unknown>>;
+    (Object.keys(base) as FilterKey[]).forEach((key) => {
+      const value = candidate[key];
+      base[key] = typeof value === 'string' ? value : '';
+    });
+
+    return base;
+  };
+
   return {
     id: event.id,
     dealId: event.dealId,
@@ -93,7 +112,8 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     address: parseOptionalString(event.address),
     trainers,
     mobileUnits,
-    logisticsInfo: parseOptionalString(event.logisticsInfo)
+    logisticsInfo: parseOptionalString(event.logisticsInfo),
+    filterValues: parseFilterValues((event as { filterValues?: unknown }).filterValues)
   };
 };
 

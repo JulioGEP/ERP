@@ -13,6 +13,19 @@ import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
 import { CalendarEvent } from '../../services/calendar';
 import {
+  buildNormalizedFilters,
+  createEmptyFilters,
+  DealsFilters,
+  filterDefinitions,
+  FilterKey,
+  formatDealDate,
+  getDealFilterFieldValue,
+  normaliseText,
+  fallbackClientName,
+  fallbackFormationsLabel,
+  fallbackSede
+} from '../../services/dealFilters';
+import {
   fetchDealById,
   fetchDeals,
   DealRecord,
@@ -42,61 +55,6 @@ interface SortConfig {
   field: SortField;
   direction: SortDirection;
 }
-
-type FilterKey =
-  | 'id'
-  | 'wonDate'
-  | 'title'
-  | 'clientName'
-  | 'pipelineName'
-  | 'sede'
-  | 'address'
-  | 'caes'
-  | 'fundae'
-  | 'hotelPernocta'
-  | 'formations'
-  | 'trainingProducts'
-  | 'extraProducts'
-  | 'notes'
-  | 'attachments';
-
-type DealsFilters = Record<FilterKey, string>;
-
-interface FilterDefinition {
-  key: FilterKey;
-  label: string;
-  placeholder?: string;
-}
-
-const filterDefinitions: FilterDefinition[] = [
-  { key: 'id', label: 'Presupuesto', placeholder: 'Ej. 1234' },
-  { key: 'wonDate', label: 'Fecha de ganado', placeholder: 'Ej. 2023-05-15' },
-  { key: 'title', label: 'Título', placeholder: 'Busca por título' },
-  { key: 'clientName', label: 'Cliente', placeholder: 'Nombre de la organización' },
-  { key: 'pipelineName', label: 'Tipo de formación', placeholder: 'Embudo o tipo' },
-  { key: 'sede', label: 'Sede', placeholder: 'Nombre o ciudad de la sede' },
-  { key: 'address', label: 'Dirección', placeholder: 'Dirección de la formación' },
-  { key: 'caes', label: 'CAES', placeholder: 'Información CAES' },
-  { key: 'fundae', label: 'FUNDAE', placeholder: 'Código o enlace' },
-  { key: 'hotelPernocta', label: 'Hotel y pernocta', placeholder: 'Requisitos de alojamiento' },
-  { key: 'formations', label: 'Formaciones', placeholder: 'Formaciones vinculadas' },
-  { key: 'trainingProducts', label: 'Productos de formación', placeholder: 'Nombre, código o horas' },
-  { key: 'extraProducts', label: 'Productos extras', placeholder: 'Servicios adicionales' },
-  { key: 'notes', label: 'Notas', placeholder: 'Contenido de notas' },
-  { key: 'attachments', label: 'Adjuntos', placeholder: 'Nombre de documento' }
-];
-
-const createEmptyFilters = (): DealsFilters =>
-  filterDefinitions.reduce((accumulator, definition) => {
-    accumulator[definition.key] = '';
-    return accumulator;
-  }, {} as DealsFilters);
-
-const normaliseText = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('es');
 
 interface DealsBoardProps {
   events: CalendarEvent[];
@@ -149,35 +107,6 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     setHiddenDealIds((previous) => previous.filter((dealId) => dealId !== deal.id));
   }, []);
 
-  const dateFormatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat('es-ES', {
-        dateStyle: 'medium'
-      }),
-    []
-  );
-
-  const fallbackClientName = 'Sin organización asociada';
-  const fallbackSede = 'Sin sede definida';
-  const fallbackFormationsLabel = 'Sin formaciones form-';
-
-  const formatDealDate = useCallback(
-    (value: string | null) => {
-      if (!value) {
-        return 'Sin fecha';
-      }
-
-      const timestamp = Date.parse(value);
-
-      if (Number.isNaN(timestamp)) {
-        return value;
-      }
-
-      return dateFormatter.format(new Date(timestamp));
-    },
-    [dateFormatter]
-  );
-
   const hiddenDealIdSet = useMemo(() => new Set(hiddenDealIds), [hiddenDealIds]);
 
   const dealsWithManual = useMemo<DealRecord[]>(() => {
@@ -199,83 +128,11 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   }, [data, manualDeals, hiddenDealIdSet]);
 
   const getFilterFieldValue = useCallback(
-    (deal: DealRecord, key: FilterKey): string => {
-      switch (key) {
-        case 'id':
-          return String(deal.id);
-        case 'wonDate':
-          return `${deal.wonDate ?? ''} ${formatDealDate(deal.wonDate)}`;
-        case 'title':
-          return deal.title ?? '';
-        case 'clientName':
-          return deal.clientName ?? fallbackClientName;
-        case 'pipelineName':
-          return deal.pipelineName ?? '';
-        case 'sede':
-          return deal.sede ?? fallbackSede;
-        case 'address':
-          return deal.address ?? '';
-        case 'caes':
-          return deal.caes ?? '';
-        case 'fundae':
-          return deal.fundae ?? '';
-        case 'hotelPernocta':
-          return deal.hotelPernocta ?? '';
-        case 'formations':
-          return deal.formations.length > 0 ? deal.formations.join(' ') : fallbackFormationsLabel;
-        case 'trainingProducts':
-          return deal.trainingProducts
-            .map((product) =>
-              [
-                product.name,
-                product.code ?? '',
-                product.recommendedHours != null ? String(product.recommendedHours) : '',
-                product.recommendedHoursRaw ?? ''
-              ].join(' ')
-            )
-            .join(' ');
-        case 'extraProducts':
-          return deal.extraProducts
-            .map((product) =>
-              [
-                product.name,
-                product.code ?? '',
-                Number.isFinite(product.quantity) ? String(product.quantity) : '',
-                product.notes.map((note) => note.content).join(' ')
-              ].join(' ')
-            )
-            .join(' ');
-        case 'notes': {
-          const dealNotes = deal.notes.map((note) => note.content);
-          const productNotes = [
-            ...deal.trainingProducts.flatMap((product) => product.notes.map((note) => note.content)),
-            ...deal.extraProducts.flatMap((product) => product.notes.map((note) => note.content))
-          ];
-          return [...dealNotes, ...productNotes].join(' ');
-        }
-        case 'attachments': {
-          const dealAttachments = deal.attachments.map((attachment) => attachment.name);
-          const productAttachments = [
-            ...deal.trainingProducts.flatMap((product) => product.attachments.map((attachment) => attachment.name)),
-            ...deal.extraProducts.flatMap((product) => product.attachments.map((attachment) => attachment.name))
-          ];
-          return [...dealAttachments, ...productAttachments].join(' ');
-        }
-        default:
-          return '';
-      }
-    },
-    [fallbackClientName, fallbackFormationsLabel, fallbackSede, formatDealDate]
+    (deal: DealRecord, key: FilterKey) => getDealFilterFieldValue(deal, key),
+    []
   );
 
-  const normalizedFilters = useMemo(
-    () =>
-      (Object.entries(filters) as [FilterKey, string][]) 
-        .map(([key, value]) => [key, value.trim()] as [FilterKey, string])
-        .filter(([, value]) => value.length > 0)
-        .map(([key, value]) => [key, normaliseText(value)] as [FilterKey, string]),
-    [filters]
-  );
+  const normalizedFilters = useMemo(() => buildNormalizedFilters(filters), [filters]);
 
   const activeFilterCount = normalizedFilters.length;
   const isFiltering = activeFilterCount > 0;
@@ -361,7 +218,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     });
 
     return items;
-  }, [filteredDeals, sortConfig, fallbackClientName, fallbackFormationsLabel, fallbackSede]);
+  }, [filteredDeals, sortConfig]);
 
   const handleSort = (field: SortField) => {
     setSortConfig((current) => {

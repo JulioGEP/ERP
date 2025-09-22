@@ -10,6 +10,7 @@ import Row from 'react-bootstrap/Row';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
 import { CalendarEvent } from '../../services/calendar';
+import { buildDealFilterValues } from '../../services/dealFilters';
 import { DealAttachment, DealNote, DealProduct, DealRecord } from '../../services/deals';
 import {
   loadDealExtras,
@@ -603,6 +604,7 @@ const DealDetailModal = ({
     }
 
     const eventsToSave: CalendarEvent[] = [];
+    const dealFilterValues = buildDealFilterValues(deal);
 
     for (const session of sessions) {
       const startIso = toIsoString(session.start);
@@ -634,7 +636,8 @@ const DealDetailModal = ({
         address: session.address.trim() ? session.address.trim() : null,
         trainers: sanitizedTrainers,
         mobileUnits: sanitizedMobileUnits,
-        logisticsInfo: logisticsInfo ? logisticsInfo : null
+        logisticsInfo: logisticsInfo ? logisticsInfo : null,
+        filterValues: { ...dealFilterValues }
       });
     }
 
