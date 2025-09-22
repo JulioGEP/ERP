@@ -125,6 +125,25 @@ const fetchDealProducts = async (dealId: number): Promise<string[]> => {
   }
 };
 
+const normaliseDeal = async (
+  deal: PipedriveDeal,
+  sedeOptions: Map<string, string>
+): Promise<NormalisedDeal> => {
+  const client = extractClient(deal);
+  const sedeRaw = (deal as Record<string, unknown>)[SEDE_FIELD_KEY];
+  const sedeLabel = sedeRaw != null ? sedeOptions.get(String(sedeRaw)) ?? null : null;
+  const formations = await fetchDealProducts(deal.id);
+
+  return {
+    id: deal.id,
+    title: deal.title,
+    clientId: client.id,
+    clientName: client.name,
+    sede: sedeLabel,
+    formations
+  };
+};
+
 const loadDeals = async (stageId: number): Promise<NormalisedDeal[]> => {
   type DealsResponse = { data?: PipedriveDeal[] | null };
 
@@ -139,37 +158,86 @@ const loadDeals = async (stageId: number): Promise<NormalisedDeal[]> => {
   ]);
 
   const deals = dealsResponse.data ?? [];
-  const normalised: NormalisedDeal[] = [];
 
-  for (const deal of deals) {
-    const client = extractClient(deal);
-    const sedeRaw = (deal as Record<string, unknown>)[SEDE_FIELD_KEY];
-    const sedeLabel = sedeRaw != null ? sedeOptions.get(String(sedeRaw)) ?? null : null;
-    const formations = await fetchDealProducts(deal.id);
+  return Promise.all(deals.map((deal) => normaliseDeal(deal, sedeOptions)));
+};
 
-    normalised.push({
-      id: deal.id,
-      title: deal.title,
-      clientId: client.id,
-      clientName: client.name,
-      sede: sedeLabel,
-      formations
-    });
+const loadDealById = async (dealId: number): Promise<NormalisedDeal | null> => {
+  type DealResponse = { data?: PipedriveDeal | null };
+
+  const [sedeOptions, dealResponse] = await Promise.all([
+    loadSedeOptions(),
+    fetchJson<DealResponse>(`deals/${dealId}`, {})
+  ]);
+
+  const deal = dealResponse.data;
+  if (!deal) {
+    return null;
   }
 
-  return normalised;
+  return normaliseDeal(deal, sedeOptions);
 };
 
 export const handler: Handler = async (event) => {
-  try {
-    if (!API_TOKEN || !API_URL) {
+  if (!API_TOKEN || !API_URL) {
+    return {
+      statusCode: 500,
+      headers: defaultHeaders,
+      body: JSON.stringify({ message: 'Faltan las credenciales de Pipedrive en el entorno.' })
+    };
+  }
+
+  const dealParam = event.queryStringParameters?.dealId;
+  if (dealParam) {
+    const dealId = Number.parseInt(dealParam, 10);
+
+    if (!Number.isFinite(dealId) || dealId <= 0) {
       return {
-        statusCode: 500,
+        statusCode: 400,
         headers: defaultHeaders,
-        body: JSON.stringify({ message: 'Faltan las credenciales de Pipedrive en el entorno.' })
+        body: JSON.stringify({ message: 'El identificador del presupuesto no es válido.' })
       };
     }
 
+    try {
+      const deal = await loadDealById(dealId);
+
+      if (!deal) {
+        return {
+          statusCode: 404,
+          headers: defaultHeaders,
+          body: JSON.stringify({ message: 'No se encontró el presupuesto solicitado.' })
+        };
+      }
+
+      return {
+        statusCode: 200,
+        headers: defaultHeaders,
+        body: JSON.stringify({ deal })
+      };
+    } catch (error) {
+      console.error(`Error al cargar el presupuesto ${dealId} desde Pipedrive`, error);
+
+      if (error instanceof Error && error.message.includes('Error 404')) {
+        return {
+          statusCode: 404,
+          headers: defaultHeaders,
+          body: JSON.stringify({ message: 'No se encontró el presupuesto solicitado.' })
+        };
+      }
+
+      return {
+        statusCode: 500,
+        headers: defaultHeaders,
+        body: JSON.stringify({
+          message: 'No se pudo cargar el presupuesto solicitado.',
+          detail: error instanceof Error ? error.message : 'Error desconocido'
+        })
+      };
+    }
+  }
+
+  try {
     const stageParam = event.queryStringParameters?.stageId;
     const stageId = stageParam ? Number.parseInt(stageParam, 10) || DEFAULT_STAGE_ID : DEFAULT_STAGE_ID;
 
