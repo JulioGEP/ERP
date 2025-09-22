@@ -22,7 +22,7 @@ const CalendarView = () => (
           selectable={false}
           editable={false}
           slotDuration="00:30:00"
-          slotMinTime="06:00:00"
+          slotMinTime="00:00:00"
           scrollTime="06:00:00"
           height="parent"
           nowIndicator
