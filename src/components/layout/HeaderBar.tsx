@@ -37,7 +37,7 @@ const HeaderBar = ({ activeKey, onNavigate }: HeaderBarProps) => (
           </Nav.Item>
           <Nav.Item>
             <Nav.Link eventKey="backlog" role="tab">
-              Sin fecha
+              Presupuestos
             </Nav.Link>
           </Nav.Item>
         </Nav>
