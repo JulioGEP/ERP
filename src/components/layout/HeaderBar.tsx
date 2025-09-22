@@ -14,7 +14,7 @@ const HeaderBar = ({ activeKey, onNavigate }: HeaderBarProps) => (
       <Container fluid>
         <Navbar.Brand className="d-flex align-items-center gap-3">
           <img src={logo} alt="GEP Group" height={40} />
-          <span>GEP Group · Planificación</span>
+          <span>GEP Group - ERP</span>
         </Navbar.Brand>
       </Container>
     </Navbar>
