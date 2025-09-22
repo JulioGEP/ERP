@@ -45,58 +45,106 @@ interface SortConfig {
 
 type FilterKey =
   | 'id'
-  | 'wonDate'
   | 'title'
   | 'clientName'
-  | 'pipelineName'
+  | 'formations'
+  | 'fundae'
+  | 'caes'
+  | 'hotelPernocta'
   | 'sede'
   | 'address'
-  | 'caes'
-  | 'fundae'
-  | 'hotelPernocta'
-  | 'formations'
-  | 'trainingProducts'
-  | 'extraProducts'
-  | 'notes'
-  | 'attachments';
+  | 'trainer'
+  | 'mobileUnit';
 
 type DealsFilters = Record<FilterKey, string>;
+
+type FilterInputType = 'text' | 'select';
+
+interface FilterOption {
+  value: string;
+  label: string;
+}
 
 interface FilterDefinition {
   key: FilterKey;
   label: string;
   placeholder?: string;
+  type: FilterInputType;
+  options?: FilterOption[];
 }
 
-const filterDefinitions: FilterDefinition[] = [
-  { key: 'id', label: 'Presupuesto', placeholder: 'Ej. 1234' },
-  { key: 'wonDate', label: 'Fecha de ganado', placeholder: 'Ej. 2023-05-15' },
-  { key: 'title', label: 'Título', placeholder: 'Busca por título' },
-  { key: 'clientName', label: 'Cliente', placeholder: 'Nombre de la organización' },
-  { key: 'pipelineName', label: 'Tipo de formación', placeholder: 'Embudo o tipo' },
-  { key: 'sede', label: 'Sede', placeholder: 'Nombre o ciudad de la sede' },
-  { key: 'address', label: 'Dirección', placeholder: 'Dirección de la formación' },
-  { key: 'caes', label: 'CAES', placeholder: 'Información CAES' },
-  { key: 'fundae', label: 'FUNDAE', placeholder: 'Código o enlace' },
-  { key: 'hotelPernocta', label: 'Hotel y pernocta', placeholder: 'Requisitos de alojamiento' },
-  { key: 'formations', label: 'Formaciones', placeholder: 'Formaciones vinculadas' },
-  { key: 'trainingProducts', label: 'Productos de formación', placeholder: 'Nombre, código o horas' },
-  { key: 'extraProducts', label: 'Productos extras', placeholder: 'Servicios adicionales' },
-  { key: 'notes', label: 'Notas', placeholder: 'Contenido de notas' },
-  { key: 'attachments', label: 'Adjuntos', placeholder: 'Nombre de documento' }
+const filterRows: FilterKey[][] = [
+  ['id', 'clientName', 'title', 'formations'],
+  ['fundae', 'caes', 'hotelPernocta', 'sede'],
+  ['address', 'trainer', 'mobileUnit']
+];
+
+const filterKeys: FilterKey[] = [
+  'id',
+  'clientName',
+  'title',
+  'formations',
+  'fundae',
+  'caes',
+  'hotelPernocta',
+  'sede',
+  'address',
+  'trainer',
+  'mobileUnit'
 ];
 
 const createEmptyFilters = (): DealsFilters =>
-  filterDefinitions.reduce((accumulator, definition) => {
-    accumulator[definition.key] = '';
+  filterKeys.reduce((accumulator, key) => {
+    accumulator[key] = '';
     return accumulator;
   }, {} as DealsFilters);
+
+const createYesNoOptions = (allLabel: string): FilterOption[] => [
+  { value: '', label: allLabel },
+  { value: 'si', label: 'Sí' },
+  { value: 'no', label: 'No' }
+];
+
+const fundaeSelectOptions = createYesNoOptions('Todas las opciones');
+const caesSelectOptions = createYesNoOptions('Todas las opciones');
+const hotelPernoctaSelectOptions = createYesNoOptions('Todas las opciones');
+
+const sedeSelectOptions: FilterOption[] = [
+  { value: '', label: 'Todas las sedes' },
+  { value: 'GEP Madrid', label: 'GEP Madrid' },
+  { value: 'GEP Sabadell', label: 'GEP Sabadell' },
+  { value: 'In Company', label: 'In Company' }
+];
 
 const normaliseText = (value: string): string =>
   value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('es');
+
+const buildUniqueList = (values: string[]): string[] => {
+  const map = new Map<string, string>();
+
+  values.forEach((value) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+
+    const trimmed = value.trim();
+
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    const normalized = normaliseText(trimmed);
+
+    if (!map.has(normalized)) {
+      map.set(normalized, trimmed);
+    }
+  });
+
+  return Array.from(map.values());
+};
 
 interface DealsBoardProps {
   events: CalendarEvent[];
@@ -198,74 +246,200 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     return Array.from(map.values());
   }, [data, manualDeals, hiddenDealIdSet]);
 
+  const availableTrainers = useMemo(() => {
+    const values: string[] = [];
+
+    events.forEach((event) => {
+      values.push(...event.trainers);
+    });
+
+    const unique = buildUniqueList(values);
+    unique.sort((first, second) => first.localeCompare(second, 'es', { sensitivity: 'base' }));
+    return unique;
+  }, [events]);
+
+  const availableMobileUnits = useMemo(() => {
+    const values: string[] = [];
+
+    events.forEach((event) => {
+      values.push(...event.mobileUnits);
+    });
+
+    const unique = buildUniqueList(values);
+    unique.sort((first, second) => first.localeCompare(second, 'es', { sensitivity: 'base' }));
+    return unique;
+  }, [events]);
+
+  const dealTrainerMap = useMemo<Map<number, string[]>>(() => {
+    const map = new Map<number, string[]>();
+
+    events.forEach((event) => {
+      const sanitizedTrainers = buildUniqueList(event.trainers);
+
+      if (sanitizedTrainers.length === 0) {
+        return;
+      }
+
+      const existing = map.get(event.dealId) ?? [];
+      const combined = buildUniqueList([...existing, ...sanitizedTrainers]);
+      combined.sort((first, second) => first.localeCompare(second, 'es', { sensitivity: 'base' }));
+      map.set(event.dealId, combined);
+    });
+
+    return map;
+  }, [events]);
+
+  const dealMobileUnitMap = useMemo<Map<number, string[]>>(() => {
+    const map = new Map<number, string[]>();
+
+    events.forEach((event) => {
+      const sanitizedUnits = buildUniqueList(event.mobileUnits);
+
+      if (sanitizedUnits.length === 0) {
+        return;
+      }
+
+      const existing = map.get(event.dealId) ?? [];
+      const combined = buildUniqueList([...existing, ...sanitizedUnits]);
+      combined.sort((first, second) => first.localeCompare(second, 'es', { sensitivity: 'base' }));
+      map.set(event.dealId, combined);
+    });
+
+    return map;
+  }, [events]);
+
+  const trainerOptions = useMemo<FilterOption[]>(() => {
+    const baseOption: FilterOption = { value: '', label: 'Todos los bomberos' };
+
+    if (availableTrainers.length === 0) {
+      return [baseOption];
+    }
+
+    return [
+      baseOption,
+      ...availableTrainers.map((trainer) => ({ value: trainer, label: trainer }))
+    ];
+  }, [availableTrainers]);
+
+  const mobileUnitOptions = useMemo<FilterOption[]>(() => {
+    const baseOption: FilterOption = { value: '', label: 'Todas las unidades móviles' };
+
+    if (availableMobileUnits.length === 0) {
+      return [baseOption];
+    }
+
+    return [
+      baseOption,
+      ...availableMobileUnits.map((unit) => ({ value: unit, label: unit }))
+    ];
+  }, [availableMobileUnits]);
+
+  const filterDefinitions = useMemo<Record<FilterKey, FilterDefinition>>(
+    () => ({
+      id: {
+        key: 'id',
+        label: 'Presupuesto',
+        placeholder: 'Ej. 1234',
+        type: 'text'
+      },
+      clientName: {
+        key: 'clientName',
+        label: 'Cliente',
+        placeholder: 'Nombre de la organización',
+        type: 'text'
+      },
+      title: {
+        key: 'title',
+        label: 'Título',
+        placeholder: 'Busca por título',
+        type: 'text'
+      },
+      formations: {
+        key: 'formations',
+        label: 'Formación',
+        placeholder: 'Formaciones vinculadas',
+        type: 'text'
+      },
+      fundae: {
+        key: 'fundae',
+        label: 'FUNDAE',
+        type: 'select',
+        options: fundaeSelectOptions
+      },
+      caes: {
+        key: 'caes',
+        label: 'CAES',
+        type: 'select',
+        options: caesSelectOptions
+      },
+      hotelPernocta: {
+        key: 'hotelPernocta',
+        label: 'Hotel Pernocta',
+        type: 'select',
+        options: hotelPernoctaSelectOptions
+      },
+      sede: {
+        key: 'sede',
+        label: 'Sede de la formación',
+        type: 'select',
+        options: sedeSelectOptions
+      },
+      address: {
+        key: 'address',
+        label: 'Dirección',
+        placeholder: 'Dirección de la formación',
+        type: 'text'
+      },
+      trainer: {
+        key: 'trainer',
+        label: 'Bombero',
+        type: 'select',
+        options: trainerOptions
+      },
+      mobileUnit: {
+        key: 'mobileUnit',
+        label: 'Unidades móviles',
+        type: 'select',
+        options: mobileUnitOptions
+      }
+    }),
+    [mobileUnitOptions, trainerOptions]
+  );
+
   const getFilterFieldValue = useCallback(
     (deal: DealRecord, key: FilterKey): string => {
       switch (key) {
         case 'id':
           return String(deal.id);
-        case 'wonDate':
-          return `${deal.wonDate ?? ''} ${formatDealDate(deal.wonDate)}`;
         case 'title':
           return deal.title ?? '';
         case 'clientName':
           return deal.clientName ?? fallbackClientName;
-        case 'pipelineName':
-          return deal.pipelineName ?? '';
+        case 'formations':
+          return deal.formations.length > 0 ? deal.formations.join(' ') : fallbackFormationsLabel;
+        case 'fundae':
+          return deal.fundae ?? '';
+        case 'caes':
+          return deal.caes ?? '';
+        case 'hotelPernocta':
+          return deal.hotelPernocta ?? '';
         case 'sede':
           return deal.sede ?? fallbackSede;
         case 'address':
           return deal.address ?? '';
-        case 'caes':
-          return deal.caes ?? '';
-        case 'fundae':
-          return deal.fundae ?? '';
-        case 'hotelPernocta':
-          return deal.hotelPernocta ?? '';
-        case 'formations':
-          return deal.formations.length > 0 ? deal.formations.join(' ') : fallbackFormationsLabel;
-        case 'trainingProducts':
-          return deal.trainingProducts
-            .map((product) =>
-              [
-                product.name,
-                product.code ?? '',
-                product.recommendedHours != null ? String(product.recommendedHours) : '',
-                product.recommendedHoursRaw ?? ''
-              ].join(' ')
-            )
-            .join(' ');
-        case 'extraProducts':
-          return deal.extraProducts
-            .map((product) =>
-              [
-                product.name,
-                product.code ?? '',
-                Number.isFinite(product.quantity) ? String(product.quantity) : '',
-                product.notes.map((note) => note.content).join(' ')
-              ].join(' ')
-            )
-            .join(' ');
-        case 'notes': {
-          const dealNotes = deal.notes.map((note) => note.content);
-          const productNotes = [
-            ...deal.trainingProducts.flatMap((product) => product.notes.map((note) => note.content)),
-            ...deal.extraProducts.flatMap((product) => product.notes.map((note) => note.content))
-          ];
-          return [...dealNotes, ...productNotes].join(' ');
+        case 'trainer': {
+          const trainers = dealTrainerMap.get(deal.id);
+          return trainers ? trainers.join(' ') : '';
         }
-        case 'attachments': {
-          const dealAttachments = deal.attachments.map((attachment) => attachment.name);
-          const productAttachments = [
-            ...deal.trainingProducts.flatMap((product) => product.attachments.map((attachment) => attachment.name)),
-            ...deal.extraProducts.flatMap((product) => product.attachments.map((attachment) => attachment.name))
-          ];
-          return [...dealAttachments, ...productAttachments].join(' ');
+        case 'mobileUnit': {
+          const mobileUnits = dealMobileUnitMap.get(deal.id);
+          return mobileUnits ? mobileUnits.join(' ') : '';
         }
         default:
           return '';
       }
     },
-    [fallbackClientName, fallbackFormationsLabel, fallbackSede, formatDealDate]
+    [dealMobileUnitMap, dealTrainerMap, fallbackClientName, fallbackFormationsLabel, fallbackSede]
   );
 
   const normalizedFilters = useMemo(
@@ -543,21 +717,49 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
             <div id={filterPanelId} className="mb-4">
               <div className="border rounded p-3">
                 <Form>
-                  <Row className="g-3">
-                    {filterDefinitions.map((definition) => (
-                      <Col key={definition.key} lg={4} md={6} sm={12}>
-                        <Form.Group controlId={`filter-${definition.key}`}>
-                          <Form.Label>{definition.label}</Form.Label>
-                          <Form.Control
-                            type="text"
-                            value={filters[definition.key]}
-                            placeholder={definition.placeholder}
-                            onChange={(event) => handleFilterChange(definition.key, event.target.value)}
-                          />
-                        </Form.Group>
-                      </Col>
-                    ))}
-                  </Row>
+                  <div className="d-flex flex-column gap-3">
+                    {filterRows.map((row, rowIndex) => {
+                      const columnSize = Math.floor(12 / row.length);
+
+                      return (
+                        <Row key={`filter-row-${rowIndex}`} className="g-3">
+                          {row.map((key) => {
+                            const definition = filterDefinitions[key];
+                            const columnWidth = Number.isFinite(columnSize) ? columnSize : 4;
+
+                            return (
+                              <Col key={key} lg={columnWidth} md={6} sm={12}>
+                                <Form.Group controlId={`filter-${key}`}>
+                                  <Form.Label>{definition.label}</Form.Label>
+                                  {definition.type === 'select' ? (
+                                    <Form.Select
+                                      value={filters[key]}
+                                      onChange={(event) => handleFilterChange(key, event.target.value)}
+                                    >
+                                      {(definition.options ?? [{ value: '', label: 'Todas las opciones' }]).map(
+                                        (option) => (
+                                          <option key={`${key}-${option.value || 'all'}`} value={option.value}>
+                                            {option.label}
+                                          </option>
+                                        )
+                                      )}
+                                    </Form.Select>
+                                  ) : (
+                                    <Form.Control
+                                      type="text"
+                                      value={filters[key]}
+                                      placeholder={definition.placeholder}
+                                      onChange={(event) => handleFilterChange(key, event.target.value)}
+                                    />
+                                  )}
+                                </Form.Group>
+                              </Col>
+                            );
+                          })}
+                        </Row>
+                      );
+                    })}
+                  </div>
                   <div className="d-flex justify-content-end gap-2 mt-3">
                     <Button
                       type="button"
