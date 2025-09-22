@@ -114,6 +114,7 @@ export const fetchDealById = async (dealId: number): Promise<DealRecord> => {
 };
 
 const MANUAL_DEALS_STORAGE_KEY = 'erp-manual-deals-v1';
+const HIDDEN_DEALS_STORAGE_KEY = 'erp-hidden-deals-v1';
 const isBrowser = typeof window !== 'undefined';
 
 const parseString = (value: unknown, fallback = ''): string =>
@@ -146,6 +147,16 @@ const parseStringArray = (value: unknown): string[] => {
         .filter((item) => item.length > 0)
     )
   );
+};
+
+const parseNumberArray = (value: unknown): number[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => (typeof item === 'number' ? item : Number.parseInt(String(item), 10)))
+    .filter((item) => Number.isFinite(item));
 };
 
 const parseDealNotes = (value: unknown): DealNote[] => {
@@ -333,5 +344,37 @@ export const persistStoredManualDeals = (deals: DealRecord[]) => {
     window.localStorage.setItem(MANUAL_DEALS_STORAGE_KEY, JSON.stringify(sanitized));
   } catch (error) {
     console.error('No se pudieron guardar los deals manuales en el almacenamiento local', error);
+  }
+};
+
+export const loadHiddenDealIds = (): number[] => {
+  if (!isBrowser) {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_DEALS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    return parseNumberArray(parsed);
+  } catch (error) {
+    console.error('No se pudo leer la lista de deals ocultos', error);
+    return [];
+  }
+};
+
+export const persistHiddenDealIds = (dealIds: number[]) => {
+  if (!isBrowser) {
+    return;
+  }
+
+  try {
+    const uniqueIds = Array.from(new Set(dealIds.filter((dealId) => Number.isFinite(dealId))));
+    window.localStorage.setItem(HIDDEN_DEALS_STORAGE_KEY, JSON.stringify(uniqueIds));
+  } catch (error) {
+    console.error('No se pudo guardar la lista de deals ocultos', error);
   }
 };

@@ -4,7 +4,11 @@ import Alert from 'react-bootstrap/Alert';
 import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
 import Card from 'react-bootstrap/Card';
+import Col from 'react-bootstrap/Col';
+import Collapse from 'react-bootstrap/Collapse';
+import Form from 'react-bootstrap/Form';
 import Placeholder from 'react-bootstrap/Placeholder';
+import Row from 'react-bootstrap/Row';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
 import { CalendarEvent } from '../../services/calendar';
@@ -12,12 +16,14 @@ import {
   fetchDealById,
   fetchDeals,
   DealRecord,
+  loadHiddenDealIds,
   loadStoredManualDeals,
+  persistHiddenDealIds,
   persistStoredManualDeals
 } from '../../services/deals';
 import DealDetailModal from './DealDetailModal';
 
-const skeletonColumnCount = 6;
+const skeletonColumnCount = 7;
 const skeletonRows = Array.from({ length: 4 }, (_, index) => (
   <tr key={`skeleton-${index}`}>
     {Array.from({ length: skeletonColumnCount }).map((__, cell) => (
@@ -37,6 +43,61 @@ interface SortConfig {
   direction: SortDirection;
 }
 
+type FilterKey =
+  | 'id'
+  | 'wonDate'
+  | 'title'
+  | 'clientName'
+  | 'pipelineName'
+  | 'sede'
+  | 'address'
+  | 'caes'
+  | 'fundae'
+  | 'hotelPernocta'
+  | 'formations'
+  | 'trainingProducts'
+  | 'extraProducts'
+  | 'notes'
+  | 'attachments';
+
+type DealsFilters = Record<FilterKey, string>;
+
+interface FilterDefinition {
+  key: FilterKey;
+  label: string;
+  placeholder?: string;
+}
+
+const filterDefinitions: FilterDefinition[] = [
+  { key: 'id', label: 'Presupuesto', placeholder: 'Ej. 1234' },
+  { key: 'wonDate', label: 'Fecha de ganado', placeholder: 'Ej. 2023-05-15' },
+  { key: 'title', label: 'Título', placeholder: 'Busca por título' },
+  { key: 'clientName', label: 'Cliente', placeholder: 'Nombre de la organización' },
+  { key: 'pipelineName', label: 'Tipo de formación', placeholder: 'Embudo o tipo' },
+  { key: 'sede', label: 'Sede', placeholder: 'Nombre o ciudad de la sede' },
+  { key: 'address', label: 'Dirección', placeholder: 'Dirección de la formación' },
+  { key: 'caes', label: 'CAES', placeholder: 'Información CAES' },
+  { key: 'fundae', label: 'FUNDAE', placeholder: 'Código o enlace' },
+  { key: 'hotelPernocta', label: 'Hotel y pernocta', placeholder: 'Requisitos de alojamiento' },
+  { key: 'formations', label: 'Formaciones', placeholder: 'Formaciones vinculadas' },
+  { key: 'trainingProducts', label: 'Productos de formación', placeholder: 'Nombre, código o horas' },
+  { key: 'extraProducts', label: 'Productos extras', placeholder: 'Servicios adicionales' },
+  { key: 'notes', label: 'Notas', placeholder: 'Contenido de notas' },
+  { key: 'attachments', label: 'Adjuntos', placeholder: 'Nombre de documento' }
+];
+
+const createEmptyFilters = (): DealsFilters =>
+  filterDefinitions.reduce((accumulator, definition) => {
+    accumulator[definition.key] = '';
+    return accumulator;
+  }, {} as DealsFilters);
+
+const normaliseText = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('es');
+
 interface DealsBoardProps {
   events: CalendarEvent[];
   onUpdateSchedule: (dealId: number, events: CalendarEvent[]) => void;
@@ -48,6 +109,10 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ field: 'wonDate', direction: 'desc' });
   const [manualDeals, setManualDeals] = useState<DealRecord[]>(() => loadStoredManualDeals());
+  const [hiddenDealIds, setHiddenDealIds] = useState<number[]>(() => loadHiddenDealIds());
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filters, setFilters] = useState<DealsFilters>(() => createEmptyFilters());
+  const filterPanelId = 'deals-filters-panel';
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['deals', 'stage-3'],
     queryFn: fetchDeals,
@@ -68,11 +133,20 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     persistStoredManualDeals(manualDeals);
   }, [manualDeals]);
 
+  useEffect(() => {
+    persistHiddenDealIds(hiddenDealIds);
+  }, [hiddenDealIds]);
+
+  useEffect(() => {
+    setManualDeals((previous) => previous.filter((deal) => !hiddenDealIds.includes(deal.id)));
+  }, [hiddenDealIds]);
+
   const registerManualDeal = useCallback((deal: DealRecord) => {
     setManualDeals((previous) => {
       const filtered = previous.filter((item) => item.id !== deal.id);
       return [deal, ...filtered];
     });
+    setHiddenDealIds((previous) => previous.filter((dealId) => dealId !== deal.id));
   }, []);
 
   const dateFormatter = useMemo(
@@ -87,40 +161,148 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const fallbackSede = 'Sin sede definida';
   const fallbackFormationsLabel = 'Sin formaciones form-';
 
-  const formatDealDate = (value: string | null) => {
-    if (!value) {
-      return 'Sin fecha';
-    }
+  const formatDealDate = useCallback(
+    (value: string | null) => {
+      if (!value) {
+        return 'Sin fecha';
+      }
 
-    const timestamp = Date.parse(value);
+      const timestamp = Date.parse(value);
 
-    if (Number.isNaN(timestamp)) {
-      return value;
-    }
+      if (Number.isNaN(timestamp)) {
+        return value;
+      }
 
-    return dateFormatter.format(new Date(timestamp));
-  };
+      return dateFormatter.format(new Date(timestamp));
+    },
+    [dateFormatter]
+  );
+
+  const hiddenDealIdSet = useMemo(() => new Set(hiddenDealIds), [hiddenDealIds]);
 
   const dealsWithManual = useMemo<DealRecord[]>(() => {
     const map = new Map<number, DealRecord>();
 
     (data ?? []).forEach((deal) => {
-      map.set(deal.id, deal);
+      if (!hiddenDealIdSet.has(deal.id)) {
+        map.set(deal.id, deal);
+      }
     });
 
     manualDeals.forEach((deal) => {
-      map.set(deal.id, deal);
+      if (!hiddenDealIdSet.has(deal.id)) {
+        map.set(deal.id, deal);
+      }
     });
 
     return Array.from(map.values());
-  }, [data, manualDeals]);
+  }, [data, manualDeals, hiddenDealIdSet]);
 
-  const sortedDeals = useMemo<DealRecord[]>(() => {
+  const getFilterFieldValue = useCallback(
+    (deal: DealRecord, key: FilterKey): string => {
+      switch (key) {
+        case 'id':
+          return String(deal.id);
+        case 'wonDate':
+          return `${deal.wonDate ?? ''} ${formatDealDate(deal.wonDate)}`;
+        case 'title':
+          return deal.title ?? '';
+        case 'clientName':
+          return deal.clientName ?? fallbackClientName;
+        case 'pipelineName':
+          return deal.pipelineName ?? '';
+        case 'sede':
+          return deal.sede ?? fallbackSede;
+        case 'address':
+          return deal.address ?? '';
+        case 'caes':
+          return deal.caes ?? '';
+        case 'fundae':
+          return deal.fundae ?? '';
+        case 'hotelPernocta':
+          return deal.hotelPernocta ?? '';
+        case 'formations':
+          return deal.formations.length > 0 ? deal.formations.join(' ') : fallbackFormationsLabel;
+        case 'trainingProducts':
+          return deal.trainingProducts
+            .map((product) =>
+              [
+                product.name,
+                product.code ?? '',
+                product.recommendedHours != null ? String(product.recommendedHours) : '',
+                product.recommendedHoursRaw ?? ''
+              ].join(' ')
+            )
+            .join(' ');
+        case 'extraProducts':
+          return deal.extraProducts
+            .map((product) =>
+              [
+                product.name,
+                product.code ?? '',
+                Number.isFinite(product.quantity) ? String(product.quantity) : '',
+                product.notes.map((note) => note.content).join(' ')
+              ].join(' ')
+            )
+            .join(' ');
+        case 'notes': {
+          const dealNotes = deal.notes.map((note) => note.content);
+          const productNotes = [
+            ...deal.trainingProducts.flatMap((product) => product.notes.map((note) => note.content)),
+            ...deal.extraProducts.flatMap((product) => product.notes.map((note) => note.content))
+          ];
+          return [...dealNotes, ...productNotes].join(' ');
+        }
+        case 'attachments': {
+          const dealAttachments = deal.attachments.map((attachment) => attachment.name);
+          const productAttachments = [
+            ...deal.trainingProducts.flatMap((product) => product.attachments.map((attachment) => attachment.name)),
+            ...deal.extraProducts.flatMap((product) => product.attachments.map((attachment) => attachment.name))
+          ];
+          return [...dealAttachments, ...productAttachments].join(' ');
+        }
+        default:
+          return '';
+      }
+    },
+    [fallbackClientName, fallbackFormationsLabel, fallbackSede, formatDealDate]
+  );
+
+  const normalizedFilters = useMemo(
+    () =>
+      (Object.entries(filters) as [FilterKey, string][]) 
+        .map(([key, value]) => [key, value.trim()] as [FilterKey, string])
+        .filter(([, value]) => value.length > 0)
+        .map(([key, value]) => [key, normaliseText(value)] as [FilterKey, string]),
+    [filters]
+  );
+
+  const activeFilterCount = normalizedFilters.length;
+  const isFiltering = activeFilterCount > 0;
+
+  const filteredDeals = useMemo<DealRecord[]>(() => {
     if (dealsWithManual.length === 0) {
       return [];
     }
 
-    const items = [...dealsWithManual];
+    if (normalizedFilters.length === 0) {
+      return dealsWithManual;
+    }
+
+    return dealsWithManual.filter((deal) =>
+      normalizedFilters.every(([key, filterValue]) => {
+        const haystack = normaliseText(getFilterFieldValue(deal, key));
+        return haystack.includes(filterValue);
+      })
+    );
+  }, [dealsWithManual, normalizedFilters, getFilterFieldValue]);
+
+  const sortedDeals = useMemo<DealRecord[]>(() => {
+    if (filteredDeals.length === 0) {
+      return [];
+    }
+
+    const items = [...filteredDeals];
     const { field, direction } = sortConfig;
     const multiplier = direction === 'asc' ? 1 : -1;
 
@@ -179,7 +361,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     });
 
     return items;
-  }, [dealsWithManual, sortConfig, fallbackClientName, fallbackFormationsLabel, fallbackSede]);
+  }, [filteredDeals, sortConfig, fallbackClientName, fallbackFormationsLabel, fallbackSede]);
 
   const handleSort = (field: SortField) => {
     setSortConfig((current) => {
@@ -198,6 +380,17 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     }
 
     return sortConfig.direction === 'asc' ? 'ascending' : 'descending';
+  };
+
+  const handleFilterChange = (key: FilterKey, value: string) => {
+    setFilters((current) => ({
+      ...current,
+      [key]: value
+    }));
+  };
+
+  const handleResetFilters = () => {
+    setFilters(createEmptyFilters());
   };
 
   const renderSortButton = (label: string, field: SortField) => {
@@ -219,6 +412,37 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
         )}
       </button>
     );
+  };
+
+  const handleRemoveDeal = (dealId: number) => {
+    const confirmed = window.confirm(
+      '¿Quieres eliminar este deal de la lista de "Sin fecha"? Podrás recuperarlo subiéndolo de nuevo.'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setHiddenDealIds((previous) => {
+      if (previous.includes(dealId)) {
+        return previous;
+      }
+
+      return [...previous, dealId];
+    });
+
+    setManualDeals((previous) => previous.filter((deal) => deal.id !== dealId));
+    setSelectedDealId((current) => (current === dealId ? null : current));
+
+    queryClient.setQueryData<DealRecord[]>(['deals', 'stage-3'], (previous) => {
+      const current = previous ?? [];
+      return current.filter((item) => item.id !== dealId);
+    });
+
+    setFeedback({
+      type: 'success',
+      message: `Presupuesto #${dealId} eliminado de la lista.`
+    });
   };
 
   const uploadDeal = useMutation({
@@ -296,11 +520,58 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
         <Card.Body>
           <div className="d-flex justify-content-end mb-4">
             <Stack direction="horizontal" gap={2}>
+              <Button
+                variant={isFiltering ? 'primary' : 'outline-secondary'}
+                onClick={() => setFiltersExpanded((current) => !current)}
+                aria-expanded={filtersExpanded}
+                aria-controls={filterPanelId}
+              >
+                {filtersExpanded ? 'Ocultar filtros' : 'Mostrar filtros'}
+                {activeFilterCount > 0 && (
+                  <Badge bg={isFiltering ? 'light' : 'secondary'} text={isFiltering ? 'dark' : undefined} className="ms-2">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
               <Button variant="primary" onClick={handleUploadDeal} disabled={uploadDeal.isPending}>
                 {uploadDeal.isPending ? 'Subiendo…' : 'Subir Deal'}
               </Button>
             </Stack>
           </div>
+
+          <Collapse in={filtersExpanded}>
+            <div id={filterPanelId} className="mb-4">
+              <div className="border rounded p-3">
+                <Form>
+                  <Row className="g-3">
+                    {filterDefinitions.map((definition) => (
+                      <Col key={definition.key} lg={4} md={6} sm={12}>
+                        <Form.Group controlId={`filter-${definition.key}`}>
+                          <Form.Label>{definition.label}</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={filters[definition.key]}
+                            placeholder={definition.placeholder}
+                            onChange={(event) => handleFilterChange(definition.key, event.target.value)}
+                          />
+                        </Form.Group>
+                      </Col>
+                    ))}
+                  </Row>
+                  <div className="d-flex justify-content-end gap-2 mt-3">
+                    <Button
+                      type="button"
+                      variant="outline-secondary"
+                      onClick={handleResetFilters}
+                      disabled={!isFiltering}
+                    >
+                      Limpiar filtros
+                    </Button>
+                  </div>
+                </Form>
+              </div>
+            </div>
+          </Collapse>
 
           {feedback && (
             <Alert
@@ -343,6 +614,9 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
                   <th scope="col" aria-sort={getAriaSort('formations')}>
                     {renderSortButton('Formación', 'formations')}
                   </th>
+                  <th scope="col" className="text-end">
+                    <span className="text-uppercase text-muted small">Acciones</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -374,11 +648,32 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
                           <span className="text-muted">{fallbackFormationsLabel}</span>
                         )}
                       </td>
+                      <td className="text-end">
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleRemoveDeal(deal.id);
+                          }}
+                        >
+                          Eliminar
+                        </Button>
+                      </td>
                     </tr>
                   ))}
               </tbody>
             </Table>
           </div>
+
+          {!isLoading && isFiltering && filteredDeals.length === 0 && dealsWithManual.length > 0 && (
+            <div className="text-center py-5 text-secondary">
+              <p className="fw-semibold">No se encontraron presupuestos con los filtros aplicados.</p>
+              <Button variant="link" type="button" onClick={handleResetFilters} className="p-0">
+                Limpiar filtros
+              </Button>
+            </div>
+          )}
 
           {!isLoading && dealsWithManual.length === 0 && !isError && (
             <div className="text-center py-5 text-secondary">
