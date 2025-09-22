@@ -44,6 +44,7 @@ export interface DealRecord {
   address: string | null;
   pipelineId: number | null;
   pipelineName: string | null;
+  wonDate: string | null;
   formations: string[];
   trainingProducts: DealProduct[];
   extraProducts: DealProduct[];
