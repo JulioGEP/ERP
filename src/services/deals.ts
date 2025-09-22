@@ -1,10 +1,54 @@
+export interface DealNote {
+  id: string;
+  content: string;
+  createdAt: string | null;
+  authorName: string | null;
+  source: 'deal' | 'product' | 'local';
+  productId: number | null;
+  dealProductId: number | null;
+}
+
+export interface DealAttachment {
+  id: string;
+  name: string;
+  url: string;
+  downloadUrl: string | null;
+  fileType: string | null;
+  addedAt: string | null;
+  addedBy: string | null;
+  source: 'deal' | 'product' | 'local';
+  productId: number | null;
+  dealProductId: number | null;
+}
+
+export interface DealProduct {
+  dealProductId: number;
+  productId: number | null;
+  name: string;
+  code: string | null;
+  quantity: number;
+  itemPrice: number | null;
+  recommendedHours: number | null;
+  recommendedHoursRaw: string | null;
+  notes: DealNote[];
+  attachments: DealAttachment[];
+  isTraining: boolean;
+}
+
 export interface DealRecord {
   id: number;
   title: string;
   clientId: number | null;
   clientName: string | null;
   sede: string | null;
+  address: string | null;
+  pipelineId: number | null;
+  pipelineName: string | null;
   formations: string[];
+  trainingProducts: DealProduct[];
+  extraProducts: DealProduct[];
+  notes: DealNote[];
+  attachments: DealAttachment[];
 }
 
 interface DealsResponse {
