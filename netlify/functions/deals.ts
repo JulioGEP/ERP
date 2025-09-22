@@ -305,27 +305,53 @@ const parseRecommendedHours = (value: unknown): { raw: string | null; hours: num
   return { raw: null, hours: null };
 };
 
-const loadSedeOptions = async (): Promise<Map<string, string>> => {
+type DealFieldOptions = {
+  sede: Map<string, string>;
+  caes: Map<string, string>;
+  fundae: Map<string, string>;
+  hotelPernocta: Map<string, string>;
+};
+
+const loadFieldOptions = async (
+  fieldKey: string,
+  fieldLabel: string
+): Promise<Map<string, string>> => {
   type FieldOption = { id: number | string; label: string };
   type FieldResponse = { data?: { options?: FieldOption[] } | null };
 
   try {
-    const field = await fetchJson<FieldResponse>(`dealFields/${SEDE_FIELD_KEY}`, {});
+    const field = await fetchJson<FieldResponse>(`dealFields/${fieldKey}`, {});
     const options = field.data?.options ?? [];
     const map = new Map<string, string>();
 
     options.forEach((option) => {
-      map.set(String(option.id), option.label);
+      if (typeof option.label === 'string') {
+        const trimmed = option.label.trim();
+        if (trimmed.length > 0) {
+          map.set(String(option.id), trimmed);
+        }
+      }
     });
 
     return map;
   } catch (error) {
-    console.error('No se pudieron cargar las opciones del campo Sede', error);
+    console.error(`No se pudieron cargar las opciones del campo ${fieldLabel}`, error);
     return new Map<string, string>();
   }
 };
 
-const normaliseSedeValue = (value: unknown, options: Map<string, string>): string | null => {
+const loadDealFieldOptions = async (): Promise<DealFieldOptions> => {
+  const [sede, caes, fundae, hotelPernocta] = await Promise.all([
+    loadFieldOptions(SEDE_FIELD_KEY, 'Sede'),
+    loadFieldOptions(CAES_FIELD_KEY, 'CAES'),
+    loadFieldOptions(FUNDAE_FIELD_KEY, 'FUNDAE'),
+    loadFieldOptions(HOTEL_PERNOCTA_FIELD_KEY, 'Hotel y Pernocta')
+  ]);
+
+  return { sede, caes, fundae, hotelPernocta };
+};
+
+const normaliseFieldValue = (value: unknown, options: Map<string, string>): string | null => {
   if (value == null) {
     return null;
   }
@@ -348,7 +374,7 @@ const normaliseSedeValue = (value: unknown, options: Map<string, string>): strin
 
   if (Array.isArray(value)) {
     const labels = value
-      .map((item) => normaliseSedeValue(item, options))
+      .map((item) => normaliseFieldValue(item, options))
       .filter((label): label is string => Boolean(label && label.trim().length > 0));
 
     if (labels.length > 0) {
@@ -369,7 +395,7 @@ const normaliseSedeValue = (value: unknown, options: Map<string, string>): strin
     }
 
     if ('value' in record) {
-      const nested = normaliseSedeValue(record.value, options);
+      const nested = normaliseFieldValue(record.value, options);
       if (nested) {
         return nested;
       }
@@ -391,7 +417,7 @@ const normaliseSedeValue = (value: unknown, options: Map<string, string>): strin
 
     if (parts.length > 1) {
       const labels = parts
-        .map((part) => normaliseSedeValue(part, options))
+        .map((part) => normaliseFieldValue(part, options))
         .filter((label): label is string => Boolean(label && label.trim().length > 0));
 
       if (labels.length > 0) {
@@ -697,7 +723,7 @@ const fetchDealProductsDetailed = async (
 
 const normaliseDeal = async (
   deal: PipedriveDeal,
-  sedeOptions: Map<string, string>,
+  fieldOptions: DealFieldOptions,
   pipelineMap: Map<number, string>,
   caches: {
     productDetails: Map<number, PipedriveProduct | null>;
@@ -708,22 +734,19 @@ const normaliseDeal = async (
 ): Promise<NormalisedDeal> => {
   const client = extractClient(deal);
   const sedeRaw = (deal as Record<string, unknown>)[SEDE_FIELD_KEY];
-  const sede = normaliseSedeValue(sedeRaw, sedeOptions);
+  const sede = normaliseFieldValue(sedeRaw, fieldOptions.sede);
 
   const addressRaw = (deal as Record<string, unknown>)[ADDRESS_FIELD_KEY];
   const address = typeof addressRaw === 'string' && addressRaw.trim().length > 0 ? addressRaw.trim() : null;
 
   const caesRaw = (deal as Record<string, unknown>)[CAES_FIELD_KEY];
-  const caes = typeof caesRaw === 'string' && caesRaw.trim().length > 0 ? caesRaw.trim() : null;
+  const caes = normaliseFieldValue(caesRaw, fieldOptions.caes);
 
   const fundaeRaw = (deal as Record<string, unknown>)[FUNDAE_FIELD_KEY];
-  const fundae = typeof fundaeRaw === 'string' && fundaeRaw.trim().length > 0 ? fundaeRaw.trim() : null;
+  const fundae = normaliseFieldValue(fundaeRaw, fieldOptions.fundae);
 
   const hotelPernoctaRaw = (deal as Record<string, unknown>)[HOTEL_PERNOCTA_FIELD_KEY];
-  const hotelPernocta =
-    typeof hotelPernoctaRaw === 'string' && hotelPernoctaRaw.trim().length > 0
-      ? hotelPernoctaRaw.trim()
-      : null;
+  const hotelPernocta = normaliseFieldValue(hotelPernoctaRaw, fieldOptions.hotelPernocta);
 
   const pipelineId = toInteger(deal.pipeline_id);
   const pipelineName = pipelineId != null ? pipelineMap.get(pipelineId) ?? null : null;
@@ -791,8 +814,8 @@ const normaliseDeal = async (
 const loadDeals = async (stageId: number): Promise<NormalisedDeal[]> => {
   type DealsResponse = { data?: PipedriveDeal[] | null };
 
-  const [sedeOptions, pipelineMap, dealsResponse] = await Promise.all([
-    loadSedeOptions(),
+  const [fieldOptions, pipelineMap, dealsResponse] = await Promise.all([
+    loadDealFieldOptions(),
     loadPipelineMap(),
     fetchJson<DealsResponse>('deals', {
       stage_id: stageId,
@@ -811,14 +834,14 @@ const loadDeals = async (stageId: number): Promise<NormalisedDeal[]> => {
     dealWonTimes: new Map<number, string | null>()
   };
 
-  return Promise.all(deals.map((deal) => normaliseDeal(deal, sedeOptions, pipelineMap, caches)));
+  return Promise.all(deals.map((deal) => normaliseDeal(deal, fieldOptions, pipelineMap, caches)));
 };
 
 const loadDealById = async (dealId: number): Promise<NormalisedDeal | null> => {
   type DealResponse = { data?: PipedriveDeal | null };
 
-  const [sedeOptions, pipelineMap, dealResponse] = await Promise.all([
-    loadSedeOptions(),
+  const [fieldOptions, pipelineMap, dealResponse] = await Promise.all([
+    loadDealFieldOptions(),
     loadPipelineMap(),
     fetchJson<DealResponse>(`deals/${dealId}`, {})
   ]);
@@ -835,7 +858,7 @@ const loadDealById = async (dealId: number): Promise<NormalisedDeal | null> => {
     dealWonTimes: new Map<number, string | null>()
   };
 
-  return normaliseDeal(deal, sedeOptions, pipelineMap, caches);
+  return normaliseDeal(deal, fieldOptions, pipelineMap, caches);
 };
 
 export const handler: Handler = async (event) => {
