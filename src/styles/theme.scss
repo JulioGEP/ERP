@@ -1,14 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
 
 :root {
-  --brand-primary: #ed6c80;
-  --brand-secondary: #8a8a89;
-  --brand-accent: #e9e9e9;
+  --brand-primary: #e84761;
+  --brand-secondary: #6d6d6c;
+  --brand-accent: #e3e3e3;
   --surface-base: #ffffff;
-  --surface-muted: #fbfbfb;
-  --text-primary: #666666;
-  --text-secondary: #8a8a89;
-  --shadow-soft: 0 18px 36px rgba(138, 138, 137, 0.12);
+  --surface-muted: #f9f9f9;
+  --text-primary: #404040;
+  --text-secondary: #6d6d6c;
+  --shadow-soft: 0 18px 36px rgba(109, 109, 108, 0.12);
 }
 
 body {
@@ -50,7 +50,7 @@ p {
 }
 
 .text-secondary {
-  color: rgba(138, 138, 137, 0.72) !important;
+  color: rgba(109, 109, 108, 0.72) !important;
 }
 
 .text-primary {
@@ -83,7 +83,7 @@ p {
 .nav-tabs-clean .nav-link {
   padding: 0.85rem 1.5rem;
   font-weight: 600;
-  color: rgba(138, 138, 137, 0.72);
+  color: rgba(109, 109, 108, 0.72);
   border: none;
   border-bottom: 3px solid transparent;
   text-transform: uppercase;
@@ -99,7 +99,7 @@ p {
 }
 
 .badge.bg-info {
-  background: rgba(237, 108, 128, 0.12) !important;
+  background: rgba(232, 71, 97, 0.12) !important;
   color: var(--brand-primary) !important;
 }
 
@@ -128,7 +128,7 @@ p {
 
 .fc-theme-standard td,
 .fc-theme-standard th {
-  border-color: rgba(138, 138, 137, 0.12);
+  border-color: rgba(109, 109, 108, 0.12);
 }
 
 .table thead th {
@@ -142,5 +142,5 @@ p {
 }
 
 .table tbody tr:hover {
-  background: rgba(237, 108, 128, 0.04);
+  background: rgba(232, 71, 97, 0.04);
 }
