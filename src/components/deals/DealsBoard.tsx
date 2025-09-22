@@ -40,15 +40,7 @@ const DealsBoard = () => {
   return (
     <Card className="deals-card border-0" role="region" aria-live="polite">
       <Card.Body>
-        <div className="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
-          <div>
-            <Card.Title as="h2" className="h4 mb-1 text-primary fw-semibold">
-              Presupuestos sin fecha asignada
-            </Card.Title>
-            <Card.Subtitle className="text-secondary">
-              Embudo 3 · datos actualizados desde Pipedrive.
-            </Card.Subtitle>
-          </div>
+        <div className="d-flex justify-content-end mb-4">
           <Button variant="outline-primary" onClick={() => refetch()}>
             Recargar datos
           </Button>
