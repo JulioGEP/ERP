@@ -208,6 +208,30 @@ const parseDateValue = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const fetchDealWonDate = async (
+  dealId: number,
+  cache: Map<number, string | null>
+): Promise<string | null> => {
+  if (cache.has(dealId)) {
+    return cache.get(dealId) ?? null;
+  }
+
+  type DealResponse = { data?: PipedriveDeal | null };
+
+  try {
+    const response = await fetchJson<DealResponse>(`deals/${dealId}`, {});
+    const deal = response.data ?? null;
+    const wonDate = deal ? parseDateValue((deal as Record<string, unknown>).won_time) : null;
+
+    cache.set(dealId, wonDate);
+    return wonDate;
+  } catch (error) {
+    console.error(`No se pudo obtener la fecha de ganado del deal ${dealId}`, error);
+    cache.set(dealId, null);
+    return null;
+  }
+};
+
 const normaliseNote = (
   note: PipedriveNote,
   source: 'deal' | 'product',
@@ -547,6 +571,7 @@ const fetchDealProductsDetailed = async (
     productDetails: Map<number, PipedriveProduct | null>;
     productNotes: Map<number, NormalisedNote[]>;
     productFiles: Map<number, NormalisedAttachment[]>;
+    dealWonTimes: Map<number, string | null>;
   }
 ): Promise<NormalisedProduct[]> => {
   type ProductsResponse = { data?: DealProductItem[] | null };
@@ -672,6 +697,7 @@ const normaliseDeal = async (
     productDetails: Map<number, PipedriveProduct | null>;
     productNotes: Map<number, NormalisedNote[]>;
     productFiles: Map<number, NormalisedAttachment[]>;
+    dealWonTimes: Map<number, string | null>;
   }
 ): Promise<NormalisedDeal> => {
   const client = extractClient(deal);
@@ -683,9 +709,19 @@ const normaliseDeal = async (
 
   const pipelineId = toInteger(deal.pipeline_id);
   const pipelineName = pipelineId != null ? pipelineMap.get(pipelineId) ?? null : null;
-  const wonDate = parseDateValue((deal as Record<string, unknown>).won_time);
+  const ensureWonDate = async (): Promise<string | null> => {
+    const direct = parseDateValue((deal as Record<string, unknown>).won_time);
 
-  const [products, dealNotes, dealFiles] = await Promise.all([
+    if (direct) {
+      caches.dealWonTimes.set(deal.id, direct);
+      return direct;
+    }
+
+    return fetchDealWonDate(deal.id, caches.dealWonTimes);
+  };
+
+  const [wonDate, products, dealNotes, dealFiles] = await Promise.all([
+    ensureWonDate(),
     fetchDealProductsDetailed(deal.id, caches),
     fetchDealNotes(deal.id),
     fetchDealFiles(deal.id)
@@ -750,7 +786,8 @@ const loadDeals = async (stageId: number): Promise<NormalisedDeal[]> => {
   const caches = {
     productDetails: new Map<number, PipedriveProduct | null>(),
     productNotes: new Map<number, NormalisedNote[]>(),
-    productFiles: new Map<number, NormalisedAttachment[]>()
+    productFiles: new Map<number, NormalisedAttachment[]>(),
+    dealWonTimes: new Map<number, string | null>()
   };
 
   return Promise.all(deals.map((deal) => normaliseDeal(deal, sedeOptions, pipelineMap, caches)));
@@ -773,7 +810,8 @@ const loadDealById = async (dealId: number): Promise<NormalisedDeal | null> => {
   const caches = {
     productDetails: new Map<number, PipedriveProduct | null>(),
     productNotes: new Map<number, NormalisedNote[]>(),
-    productFiles: new Map<number, NormalisedAttachment[]>()
+    productFiles: new Map<number, NormalisedAttachment[]>(),
+    dealWonTimes: new Map<number, string | null>()
   };
 
   return normaliseDeal(deal, sedeOptions, pipelineMap, caches);
