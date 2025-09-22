@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
 import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
@@ -6,7 +7,7 @@ import Card from 'react-bootstrap/Card';
 import Placeholder from 'react-bootstrap/Placeholder';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
-import { fetchDeals, DealRecord } from '../../services/deals';
+import { fetchDealById, fetchDeals, DealRecord } from '../../services/deals';
 
 const renderRow = (deal: DealRecord) => (
   <tr key={deal.id}>
@@ -30,21 +31,98 @@ const renderRow = (deal: DealRecord) => (
   </tr>
 );
 
+type FeedbackState = { type: 'success' | 'error'; message: string } | null;
+
 const DealsBoard = () => {
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  const queryClient = useQueryClient();
+  const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['deals', 'stage-3'],
     queryFn: fetchDeals,
     staleTime: 1000 * 60
   });
 
+  const uploadDeal = useMutation({
+    mutationFn: fetchDealById,
+    onSuccess: (deal) => {
+      setFeedback({
+        type: 'success',
+        message: `Presupuesto #${deal.id} sincronizado correctamente.`
+      });
+
+      queryClient.setQueryData<DealRecord[]>(['deals', 'stage-3'], (previous) => {
+        const current = previous ?? [];
+        const filtered = current.filter((item) => item.id !== deal.id);
+        return [deal, ...filtered];
+      });
+    },
+    onError: (mutationError: unknown) => {
+      setFeedback({
+        type: 'error',
+        message:
+          mutationError instanceof Error
+            ? mutationError.message
+            : 'No se pudo cargar el presupuesto especificado.'
+      });
+    }
+  });
+
+  const handleUploadDeal = async () => {
+    const rawId = window.prompt('Introduce el ID del presupuesto que deseas subir');
+
+    if (!rawId) {
+      return;
+    }
+
+    const trimmed = rawId.trim();
+    const dealId = Number.parseInt(trimmed, 10);
+
+    if (!Number.isFinite(dealId)) {
+      setFeedback({
+        type: 'error',
+        message: 'Debes introducir un identificador numérico válido.'
+      });
+      return;
+    }
+
+    setFeedback(null);
+
+    try {
+      await uploadDeal.mutateAsync(dealId);
+    } catch (mutationError) {
+      console.error('No se pudo subir el presupuesto indicado', mutationError);
+    }
+  };
+
   return (
     <Card className="deals-card border-0" role="region" aria-live="polite">
       <Card.Body>
         <div className="d-flex justify-content-end mb-4">
-          <Button variant="outline-primary" onClick={() => refetch()}>
-            Recargar datos
-          </Button>
+          <Stack direction="horizontal" gap={2}>
+            <Button variant="primary" onClick={handleUploadDeal} disabled={uploadDeal.isPending}>
+              {uploadDeal.isPending ? 'Subiendo…' : 'Subir Deal'}
+            </Button>
+            <Button
+              variant="outline-primary"
+              onClick={() => refetch()}
+              disabled={isFetching && !isLoading}
+            >
+              {isFetching && !isLoading ? 'Recargando…' : 'Recargar datos'}
+            </Button>
+          </Stack>
         </div>
+
+        {feedback && (
+          <Alert
+            variant={feedback.type === 'success' ? 'success' : 'danger'}
+            dismissible
+            onClose={() => setFeedback(null)}
+            className="mb-4"
+            role="alert"
+          >
+            {feedback.message}
+          </Alert>
+        )}
 
         {isError && (
           <Alert variant="danger" className="mb-4" role="alert">
