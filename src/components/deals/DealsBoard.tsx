@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
 import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
@@ -41,11 +41,29 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ field: 'wonDate', direction: 'desc' });
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
+  const [manualDeals, setManualDeals] = useState<DealRecord[]>([]);
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['deals', 'stage-3'],
     queryFn: fetchDeals,
     staleTime: 1000 * 60
   });
+
+  useEffect(() => {
+    if (!data || data.length === 0) {
+      return;
+    }
+
+    setManualDeals((previous) =>
+      previous.filter((manualDeal) => !data.some((dealItem) => dealItem.id === manualDeal.id))
+    );
+  }, [data]);
+
+  const registerManualDeal = useCallback((deal: DealRecord) => {
+    setManualDeals((previous) => {
+      const filtered = previous.filter((item) => item.id !== deal.id);
+      return [deal, ...filtered];
+    });
+  }, []);
 
   const dateFormatter = useMemo(
     () =>
@@ -73,12 +91,26 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     return dateFormatter.format(new Date(timestamp));
   };
 
+  const dealsWithManual = useMemo<DealRecord[]>(() => {
+    const map = new Map<number, DealRecord>();
+
+    (data ?? []).forEach((deal) => {
+      map.set(deal.id, deal);
+    });
+
+    manualDeals.forEach((deal) => {
+      map.set(deal.id, deal);
+    });
+
+    return Array.from(map.values());
+  }, [data, manualDeals]);
+
   const sortedDeals = useMemo<DealRecord[]>(() => {
-    if (!data) {
+    if (dealsWithManual.length === 0) {
       return [];
     }
 
-    const items = [...data];
+    const items = [...dealsWithManual];
     const { field, direction } = sortConfig;
     const multiplier = direction === 'asc' ? 1 : -1;
 
@@ -137,7 +169,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     });
 
     return items;
-  }, [data, sortConfig, fallbackClientName, fallbackFormationsLabel, fallbackSede]);
+  }, [dealsWithManual, sortConfig, fallbackClientName, fallbackFormationsLabel, fallbackSede]);
 
   const handleSort = (field: SortField) => {
     setSortConfig((current) => {
@@ -192,6 +224,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
         const filtered = current.filter((item) => item.id !== deal.id);
         return [deal, ...filtered];
       });
+      registerManualDeal(deal);
     },
     onError: (mutationError: unknown) => {
       setFeedback({
@@ -240,12 +273,12 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   };
 
   const selectedDeal = useMemo(() => {
-    if (!selectedDealId || !data) {
+    if (!selectedDealId) {
       return null;
     }
 
-    return data.find((deal) => deal.id === selectedDealId) ?? null;
-  }, [data, selectedDealId]);
+    return dealsWithManual.find((deal) => deal.id === selectedDealId) ?? null;
+  }, [dealsWithManual, selectedDealId]);
 
   return (
     <>
@@ -255,9 +288,6 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
             <Stack direction="horizontal" gap={2}>
               <Button variant="primary" onClick={handleUploadDeal} disabled={uploadDeal.isPending}>
                 {uploadDeal.isPending ? 'Subiendo…' : 'Subir Deal'}
-              </Button>
-              <Button variant="outline-primary" onClick={() => refetch()} disabled={isFetching && !isLoading}>
-                {isFetching && !isLoading ? 'Recargando…' : 'Recargar datos'}
               </Button>
             </Stack>
           </div>
@@ -340,7 +370,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
             </Table>
           </div>
 
-          {!isLoading && data && data.length === 0 && !isError && (
+          {!isLoading && dealsWithManual.length === 0 && !isError && (
             <div className="text-center py-5 text-secondary">
               <p className="fw-semibold">No hay presupuestos en el embudo seleccionado.</p>
               <p className="mb-0">En cuanto un presupuesto se marque como ganado en Pipedrive, aparecerá automáticamente aquí.</p>
@@ -359,6 +389,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
           onDealRefetch={async () => {
             try {
               const refreshed = await fetchDealById(selectedDeal.id);
+              registerManualDeal(refreshed);
               queryClient.setQueryData<DealRecord[]>(['deals', 'stage-3'], (previous) => {
                 const current = previous ?? [];
                 const filtered = current.filter((item) => item.id !== refreshed.id);
