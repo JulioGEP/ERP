@@ -41,6 +41,9 @@ interface SessionFormEntry {
   attendees: string;
   sede: string;
   address: string;
+  trainers: string[];
+  mobileUnit: string;
+  logisticsInfo: string;
 }
 
 type DisplayNote = DealNote;
@@ -136,6 +139,17 @@ const countSessionsForProduct = (product: DealProduct) => {
   return quantity > 0 ? quantity : 1;
 };
 
+const sessionTrainerOptions = Array.from({ length: 10 }, (_, index) => `Bombero ${index + 1}`);
+
+const mobileUnitOptions = [
+  'Pickup',
+  'Pickup con remolque',
+  'Furgoneta',
+  'Furgoneta con remolque',
+  'Camión 1',
+  'Camión 2'
+];
+
 const DealDetailModal = ({
   show,
   deal,
@@ -219,7 +233,12 @@ const DealDetailModal = ({
           attendees:
             existingEvent && existingEvent.attendees != null ? String(existingEvent.attendees) : '',
           sede: existingEvent?.sede ?? deal.sede ?? '',
-          address: existingEvent?.address ?? deal.address ?? ''
+          address: existingEvent?.address ?? deal.address ?? '',
+          trainers: Array.isArray(existingEvent?.trainers)
+            ? [...(existingEvent?.trainers ?? [])]
+            : [],
+          mobileUnit: existingEvent?.mobileUnit ?? '',
+          logisticsInfo: existingEvent?.logisticsInfo ?? ''
         } satisfies SessionFormEntry;
       });
     });
@@ -336,6 +355,23 @@ const DealDetailModal = ({
     );
   };
 
+  const handleSessionTrainersChange = (key: string, values: string[]) => {
+    const sanitized = Array.from(
+      new Set(values.map((item) => item.trim()).filter((item) => item.length > 0))
+    );
+
+    setSessions((previous) =>
+      previous.map((session) =>
+        session.key === key
+          ? {
+              ...session,
+              trainers: sanitized
+            }
+          : session
+      )
+    );
+  };
+
   const persistExtras = (notes: StoredDealNote[], documents: StoredDealDocument[]) => {
     persistDealExtras(deal.id, { notes, documents });
   };
@@ -369,6 +405,11 @@ const DealDetailModal = ({
 
       const attendeesValue = Number.parseInt(session.attendees, 10);
       const attendees = Number.isFinite(attendeesValue) ? attendeesValue : null;
+      const sanitizedTrainers = Array.from(
+        new Set(session.trainers.map((trainer) => trainer.trim()).filter((trainer) => trainer.length > 0))
+      );
+      const mobileUnit = session.mobileUnit.trim();
+      const logisticsInfo = session.logisticsInfo.trim();
 
       eventsToSave.push({
         id: `deal-${deal.id}-item-${session.dealProductId}-session-${session.sessionIndex}`,
@@ -382,7 +423,10 @@ const DealDetailModal = ({
         end: endIso,
         attendees,
         sede: session.sede.trim() ? session.sede.trim() : null,
-        address: session.address.trim() ? session.address.trim() : null
+        address: session.address.trim() ? session.address.trim() : null,
+        trainers: sanitizedTrainers,
+        mobileUnit: mobileUnit ? mobileUnit : null,
+        logisticsInfo: logisticsInfo ? logisticsInfo : null
       });
     }
 
@@ -822,57 +866,117 @@ const DealDetailModal = ({
                           {productSessions.map((session) => (
                             <div key={session.key} className="border rounded p-3 bg-light">
                               <div className="fw-semibold mb-3">Sesión {session.sessionIndex + 1}</div>
-                              <Row className="g-3">
-                                <Col lg={3} md={6}>
-                                  <Form.Group controlId={`start-${session.key}`}>
-                                    <Form.Label>Hora y fecha inicio</Form.Label>
-                                    <Form.Control
-                                      type="datetime-local"
-                                      value={session.start}
-                                      onChange={(event) => handleSessionStartChange(session.key, event.target.value)}
-                                    />
-                                  </Form.Group>
+                              <Row className="g-4 align-items-start">
+                                <Col xl={6}>
+                                  <Row className="g-3">
+                                    <Col md={6}>
+                                      <Form.Group controlId={`start-${session.key}`}>
+                                        <Form.Label>Hora y fecha inicio</Form.Label>
+                                        <Form.Control
+                                          type="datetime-local"
+                                          value={session.start}
+                                          onChange={(event) => handleSessionStartChange(session.key, event.target.value)}
+                                        />
+                                      </Form.Group>
+                                    </Col>
+                                    <Col md={6}>
+                                      <Form.Group controlId={`end-${session.key}`}>
+                                        <Form.Label>Hora y fecha fin</Form.Label>
+                                        <Form.Control
+                                          type="datetime-local"
+                                          value={session.end}
+                                          onChange={(event) => handleSessionEndChange(session.key, event.target.value)}
+                                        />
+                                      </Form.Group>
+                                    </Col>
+                                    <Col md={6}>
+                                      <Form.Group controlId={`attendees-${session.key}`}>
+                                        <Form.Label>Alumnos</Form.Label>
+                                        <Form.Control
+                                          type="number"
+                                          min={0}
+                                          value={session.attendees}
+                                          onChange={(event) =>
+                                            handleSessionFieldChange(session.key, 'attendees', event.target.value)
+                                          }
+                                        />
+                                      </Form.Group>
+                                    </Col>
+                                    <Col md={6}>
+                                      <Form.Group controlId={`sede-${session.key}`}>
+                                        <Form.Label>Sede</Form.Label>
+                                        <Form.Control
+                                          type="text"
+                                          value={session.sede}
+                                          onChange={(event) =>
+                                            handleSessionFieldChange(session.key, 'sede', event.target.value)
+                                          }
+                                        />
+                                      </Form.Group>
+                                    </Col>
+                                    <Col xs={12}>
+                                      <Form.Group controlId={`address-${session.key}`}>
+                                        <Form.Label>Dirección de la formación</Form.Label>
+                                        <Form.Control
+                                          type="text"
+                                          value={session.address}
+                                          onChange={(event) =>
+                                            handleSessionFieldChange(session.key, 'address', event.target.value)
+                                          }
+                                        />
+                                      </Form.Group>
+                                    </Col>
+                                  </Row>
                                 </Col>
-                                <Col lg={3} md={6}>
-                                  <Form.Group controlId={`end-${session.key}`}>
-                                    <Form.Label>Hora y fecha fin</Form.Label>
-                                    <Form.Control
-                                      type="datetime-local"
-                                      value={session.end}
-                                      onChange={(event) => handleSessionEndChange(session.key, event.target.value)}
-                                    />
-                                  </Form.Group>
-                                </Col>
-                                <Col lg={2} md={6}>
-                                  <Form.Group controlId={`attendees-${session.key}`}>
-                                    <Form.Label>Alumnos</Form.Label>
-                                    <Form.Control
-                                      type="number"
-                                      min={0}
-                                      value={session.attendees}
-                                      onChange={(event) => handleSessionFieldChange(session.key, 'attendees', event.target.value)}
-                                    />
-                                  </Form.Group>
-                                </Col>
-                                <Col lg={2} md={6}>
-                                  <Form.Group controlId={`sede-${session.key}`}>
-                                    <Form.Label>Sede</Form.Label>
-                                    <Form.Control
-                                      type="text"
-                                      value={session.sede}
-                                      onChange={(event) => handleSessionFieldChange(session.key, 'sede', event.target.value)}
-                                    />
-                                  </Form.Group>
-                                </Col>
-                                <Col lg={4} md={12}>
-                                  <Form.Group controlId={`address-${session.key}`}>
-                                    <Form.Label>Dirección de la formación</Form.Label>
-                                    <Form.Control
-                                      type="text"
-                                      value={session.address}
-                                      onChange={(event) => handleSessionFieldChange(session.key, 'address', event.target.value)}
-                                    />
-                                  </Form.Group>
+                                <Col xl={6}>
+                                  <Stack gap={3}>
+                                    <Form.Group controlId={`trainers-${session.key}`}>
+                                      <Form.Label>Formador / Bombero</Form.Label>
+                                      <Form.Select
+                                        multiple
+                                        value={session.trainers}
+                                        onChange={(event) =>
+                                          handleSessionTrainersChange(
+                                            session.key,
+                                            Array.from(event.target.selectedOptions, (option) => option.value)
+                                          )
+                                        }
+                                      >
+                                        {sessionTrainerOptions.map((option) => (
+                                          <option key={`${session.key}-trainer-${option}`} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </Form.Select>
+                                    </Form.Group>
+                                    <Form.Group controlId={`mobile-unit-${session.key}`}>
+                                      <Form.Label>Unidad móvil</Form.Label>
+                                      <Form.Select
+                                        value={session.mobileUnit}
+                                        onChange={(event) =>
+                                          handleSessionFieldChange(session.key, 'mobileUnit', event.target.value)
+                                        }
+                                      >
+                                        <option value="">Selecciona una unidad</option>
+                                        {mobileUnitOptions.map((option) => (
+                                          <option key={`${session.key}-unit-${option}`} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </Form.Select>
+                                    </Form.Group>
+                                    <Form.Group controlId={`logistics-${session.key}`}>
+                                      <Form.Label>Info logística</Form.Label>
+                                      <Form.Control
+                                        as="textarea"
+                                        rows={3}
+                                        value={session.logisticsInfo}
+                                        onChange={(event) =>
+                                          handleSessionFieldChange(session.key, 'logisticsInfo', event.target.value)
+                                        }
+                                      />
+                                    </Form.Group>
+                                  </Stack>
                                 </Col>
                               </Row>
                             </div>
