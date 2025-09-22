@@ -10,6 +10,7 @@ import ListGroup from 'react-bootstrap/ListGroup';
 import Modal from 'react-bootstrap/Modal';
 import Row from 'react-bootstrap/Row';
 import Stack from 'react-bootstrap/Stack';
+import Spinner from 'react-bootstrap/Spinner';
 import Table from 'react-bootstrap/Table';
 import { CalendarEvent } from '../../services/calendar';
 import { DealAttachment, DealNote, DealProduct, DealRecord } from '../../services/deals';
@@ -23,6 +24,7 @@ import {
 interface DealDetailModalProps {
   show: boolean;
   deal: DealRecord;
+  isLoading: boolean;
   events: CalendarEvent[];
   onHide: () => void;
   onUpdateSchedule: (dealId: number, events: CalendarEvent[]) => void;
@@ -407,6 +409,7 @@ const updateSelectionSlot = (items: string[], index: number, value: string): str
 const DealDetailModal = ({
   show,
   deal,
+  isLoading,
   events,
   onHide,
   onUpdateSchedule,
@@ -1200,7 +1203,15 @@ const DealDetailModal = ({
           </div>
         </Modal.Header>
         <Modal.Body>
-          <Stack gap={4}>
+          {isLoading ? (
+            <div className="py-5 text-center">
+              <Spinner animation="border" role="status" className="mb-3">
+                <span className="visually-hidden">Cargando presupuesto…</span>
+              </Spinner>
+              <p className="mb-0">Cargando presupuesto…</p>
+            </div>
+          ) : (
+            <Stack gap={4}>
             <Row className="g-4">
               <Col xl={7} lg={12}>
                 <div className="border rounded p-3 h-100">
@@ -1210,7 +1221,7 @@ const DealDetailModal = ({
                       variant="outline-secondary"
                       size="sm"
                       onClick={handleRefresh}
-                      disabled={isRefreshing}
+                      disabled={isRefreshing || isLoading}
                     >
                       {isRefreshing ? 'Actualizando…' : 'Actualizar desde Pipedrive'}
                     </Button>
@@ -1846,6 +1857,7 @@ const DealDetailModal = ({
               )}
             </div>
           </Stack>
+          )}
         </Modal.Body>
         <Modal.Footer className="justify-content-between">
           <div className="text-muted small">
@@ -1855,7 +1867,11 @@ const DealDetailModal = ({
             <Button variant="secondary" onClick={onHide}>
               Cerrar
             </Button>
-            <Button variant="primary" onClick={handleSaveSchedule} disabled={deal.trainingProducts.length === 0}>
+            <Button
+              variant="primary"
+              onClick={handleSaveSchedule}
+              disabled={isLoading || deal.trainingProducts.length === 0}
+            >
               Guardar en calendario
             </Button>
           </div>

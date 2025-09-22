@@ -85,7 +85,7 @@ const normaliseDealRecords = (value: unknown): DealRecord[] => {
 };
 
 export const fetchDeals = async (): Promise<DealRecord[]> => {
-  const response = await fetch('/.netlify/functions/deals');
+  const response = await fetch('/.netlify/functions/deals?summary=1');
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));

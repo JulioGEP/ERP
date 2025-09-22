@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
 import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
@@ -106,7 +106,9 @@ interface DealsBoardProps {
 const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState<FeedbackState>(null);
-  const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
+  const [selectedDeal, setSelectedDeal] = useState<DealRecord | null>(null);
+  const [isSelectedDealLoading, setIsSelectedDealLoading] = useState(false);
+  const pendingDealIdRef = useRef<number | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ field: 'wonDate', direction: 'desc' });
   const [manualDeals, setManualDeals] = useState<DealRecord[]>(() => loadStoredManualDeals());
   const [hiddenDealIds, setHiddenDealIds] = useState<number[]>(() => loadHiddenDealIds());
@@ -432,7 +434,11 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     });
 
     setManualDeals((previous) => previous.filter((deal) => deal.id !== dealId));
-    setSelectedDealId((current) => (current === dealId ? null : current));
+    if (selectedDeal?.id === dealId) {
+      pendingDealIdRef.current = null;
+      setIsSelectedDealLoading(false);
+      setSelectedDeal(null);
+    }
 
     queryClient.setQueryData<DealRecord[]>(['deals', 'stage-3'], (previous) => {
       const current = previous ?? [];
@@ -498,21 +504,57 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     }
   };
 
-  const handleSelectDeal = (dealId: number) => {
-    setSelectedDealId(dealId);
+  const handleSelectDeal = async (dealId: number) => {
+    const deal = dealsWithManual.find((item) => item.id === dealId);
+
+    if (!deal) {
+      setFeedback({
+        type: 'error',
+        message: 'No se encontró el presupuesto seleccionado.'
+      });
+      return;
+    }
+
+    setFeedback(null);
+    pendingDealIdRef.current = dealId;
+    setSelectedDeal(deal);
+    setIsSelectedDealLoading(true);
+
+    try {
+      const detailedDeal = await fetchDealById(dealId);
+
+      if (pendingDealIdRef.current !== dealId) {
+        return;
+      }
+
+      setSelectedDeal(detailedDeal);
+      setIsSelectedDealLoading(false);
+      pendingDealIdRef.current = null;
+    } catch (error) {
+      console.error('No se pudo cargar el presupuesto seleccionado', error);
+
+      const isCurrentSelection = pendingDealIdRef.current === dealId;
+
+      if (isCurrentSelection) {
+        pendingDealIdRef.current = null;
+        setIsSelectedDealLoading(false);
+        setSelectedDeal(null);
+        setFeedback({
+          type: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'No se pudo cargar el presupuesto seleccionado.'
+        });
+      }
+    }
   };
 
   const handleCloseModal = () => {
-    setSelectedDealId(null);
+    pendingDealIdRef.current = null;
+    setSelectedDeal(null);
+    setIsSelectedDealLoading(false);
   };
-
-  const selectedDeal = useMemo(() => {
-    if (!selectedDealId) {
-      return null;
-    }
-
-    return dealsWithManual.find((deal) => deal.id === selectedDealId) ?? null;
-  }, [dealsWithManual, selectedDealId]);
 
   return (
     <>
@@ -688,12 +730,14 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
         <DealDetailModal
           show
           deal={selectedDeal}
+          isLoading={isSelectedDealLoading}
           onHide={handleCloseModal}
           events={events}
           onUpdateSchedule={onUpdateSchedule}
           onDealRefetch={async () => {
             try {
               const refreshed = await fetchDealById(selectedDeal.id);
+              setSelectedDeal(refreshed);
               registerManualDeal(refreshed);
               queryClient.setQueryData<DealRecord[]>(['deals', 'stage-3'], (previous) => {
                 const current = previous ?? [];

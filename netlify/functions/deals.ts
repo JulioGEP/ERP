@@ -730,14 +730,19 @@ const fetchProductFiles = async (
   }
 };
 
-const fetchDealProductsDetailed = async (
+type FetchDealProductsOptions = {
+  includeRelatedData: boolean;
+};
+
+const fetchDealProducts = async (
   dealId: number,
   caches: {
     productDetails: Map<number, PipedriveProduct | null>;
     productNotes: Map<number, NormalisedNote[]>;
     productFiles: Map<number, NormalisedAttachment[]>;
     dealWonTimes: Map<number, string | null>;
-  }
+  },
+  options: FetchDealProductsOptions
 ): Promise<NormalisedProduct[]> => {
   type ProductsResponse = { data?: DealProductItem[] | null };
 
@@ -747,6 +752,7 @@ const fetchDealProductsDetailed = async (
     });
 
     const items = productsResponse.data ?? [];
+    const shouldLoadRelatedData = options.includeRelatedData;
 
     const products = await Promise.all(
       items.map(async (item) => {
@@ -792,7 +798,7 @@ const fetchDealProductsDetailed = async (
           recommendedHours = parsedFromItem.hours;
         }
 
-        if (productId != null && (recommendedRaw == null || recommendedHours == null)) {
+        if (shouldLoadRelatedData && productId != null && (recommendedRaw == null || recommendedHours == null)) {
           const productDetail = await fetchProductDetail(productId, caches.productDetails);
 
           if (productDetail) {
@@ -814,8 +820,13 @@ const fetchDealProductsDetailed = async (
           }
         }
 
-        const productNotes = productId != null ? await fetchProductNotes(productId, caches.productNotes) : [];
-        const productFiles = productId != null ? await fetchProductFiles(productId, caches.productFiles) : [];
+        let productNotes: NormalisedNote[] = [];
+        let productFiles: NormalisedAttachment[] = [];
+
+        if (shouldLoadRelatedData && productId != null) {
+          productNotes = await fetchProductNotes(productId, caches.productNotes);
+          productFiles = await fetchProductFiles(productId, caches.productFiles);
+        }
 
         const notesWithContext = productNotes.map((note) => ({
           ...note,
@@ -854,6 +865,26 @@ const fetchDealProductsDetailed = async (
   }
 };
 
+const fetchDealProductsDetailed = async (
+  dealId: number,
+  caches: {
+    productDetails: Map<number, PipedriveProduct | null>;
+    productNotes: Map<number, NormalisedNote[]>;
+    productFiles: Map<number, NormalisedAttachment[]>;
+    dealWonTimes: Map<number, string | null>;
+  }
+): Promise<NormalisedProduct[]> => fetchDealProducts(dealId, caches, { includeRelatedData: true });
+
+const fetchDealProductsSummary = async (
+  dealId: number,
+  caches: {
+    productDetails: Map<number, PipedriveProduct | null>;
+    productNotes: Map<number, NormalisedNote[]>;
+    productFiles: Map<number, NormalisedAttachment[]>;
+    dealWonTimes: Map<number, string | null>;
+  }
+): Promise<NormalisedProduct[]> => fetchDealProducts(dealId, caches, { includeRelatedData: false });
+
 const normaliseDeal = async (
   deal: PipedriveDeal,
   fieldOptions: DealFieldOptions,
@@ -863,7 +894,8 @@ const normaliseDeal = async (
     productNotes: Map<number, NormalisedNote[]>;
     productFiles: Map<number, NormalisedAttachment[]>;
     dealWonTimes: Map<number, string | null>;
-  }
+  },
+  options: { includeRelatedData: boolean }
 ): Promise<NormalisedDeal> => {
   const client = extractClient(deal);
   const sedeRaw = (deal as Record<string, unknown>)[SEDE_FIELD_KEY];
@@ -895,11 +927,12 @@ const normaliseDeal = async (
     return fetchDealWonDate(deal.id, caches.dealWonTimes);
   };
 
+  const includeRelatedData = options.includeRelatedData;
   const [wonDate, products, dealNotes, dealFiles] = await Promise.all([
     ensureWonDate(),
-    fetchDealProductsDetailed(deal.id, caches),
-    fetchDealNotes(deal.id),
-    fetchDealFiles(deal.id)
+    includeRelatedData ? fetchDealProductsDetailed(deal.id, caches) : fetchDealProductsSummary(deal.id, caches),
+    includeRelatedData ? fetchDealNotes(deal.id) : Promise.resolve<NormalisedNote[]>([]),
+    includeRelatedData ? fetchDealFiles(deal.id) : Promise.resolve<NormalisedAttachment[]>([])
   ]);
 
   const trainingProducts = products.filter((product) => product.isTraining);
@@ -945,7 +978,7 @@ const normaliseDeal = async (
   };
 };
 
-const loadDeals = async (stageId: number): Promise<NormalisedDeal[]> => {
+const loadDeals = async (stageId: number, options: { summary: boolean }): Promise<NormalisedDeal[]> => {
   type DealsResponse = { data?: PipedriveDeal[] | null };
 
   const [fieldOptions, pipelineMap, dealsResponse] = await Promise.all([
@@ -968,7 +1001,13 @@ const loadDeals = async (stageId: number): Promise<NormalisedDeal[]> => {
     dealWonTimes: new Map<number, string | null>()
   };
 
-  return Promise.all(deals.map((deal) => normaliseDeal(deal, fieldOptions, pipelineMap, caches)));
+  return Promise.all(
+    deals.map((deal) =>
+      normaliseDeal(deal, fieldOptions, pipelineMap, caches, {
+        includeRelatedData: !options.summary
+      })
+    )
+  );
 };
 
 const loadDealById = async (dealId: number): Promise<NormalisedDeal | null> => {
@@ -992,7 +1031,7 @@ const loadDealById = async (dealId: number): Promise<NormalisedDeal | null> => {
     dealWonTimes: new Map<number, string | null>()
   };
 
-  return normaliseDeal(deal, fieldOptions, pipelineMap, caches);
+  return normaliseDeal(deal, fieldOptions, pipelineMap, caches, { includeRelatedData: true });
 };
 
 export const handler: Handler = async (event) => {
@@ -1057,8 +1096,11 @@ export const handler: Handler = async (event) => {
   try {
     const stageParam = event.queryStringParameters?.stageId;
     const stageId = stageParam ? Number.parseInt(stageParam, 10) || DEFAULT_STAGE_ID : DEFAULT_STAGE_ID;
+    const summaryParam = event.queryStringParameters?.summary;
+    const summary =
+      typeof summaryParam === 'string' && ['1', 'true', 'yes'].includes(summaryParam.toLowerCase());
 
-    const deals = await loadDeals(stageId);
+    const deals = await loadDeals(stageId, { summary });
 
     return {
       statusCode: 200,
