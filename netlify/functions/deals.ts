@@ -285,6 +285,95 @@ const loadSedeOptions = async (): Promise<Map<string, string>> => {
   }
 };
 
+const normaliseSedeValue = (value: unknown, options: Map<string, string>): string | null => {
+  if (value == null) {
+    return null;
+  }
+
+  const findByOptionKey = (rawKey: string): string | null => {
+    const candidate = options.get(rawKey);
+
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    return null;
+  };
+
+  const directMatch = findByOptionKey(String(value));
+  if (directMatch) {
+    return directMatch;
+  }
+
+  if (Array.isArray(value)) {
+    const labels = value
+      .map((item) => normaliseSedeValue(item, options))
+      .filter((label): label is string => Boolean(label && label.trim().length > 0));
+
+    if (labels.length > 0) {
+      return Array.from(new Set(labels)).join(', ');
+    }
+
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+
+    if (typeof record.label === 'string') {
+      const trimmed = record.label.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if ('value' in record) {
+      const nested = normaliseSedeValue(record.value, options);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parts = trimmed
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+
+    if (parts.length > 1) {
+      const labels = parts
+        .map((part) => normaliseSedeValue(part, options))
+        .filter((label): label is string => Boolean(label && label.trim().length > 0));
+
+      if (labels.length > 0) {
+        return Array.from(new Set(labels)).join(', ');
+      }
+    }
+
+    const fromTrimmed = findByOptionKey(trimmed);
+    if (fromTrimmed) {
+      return fromTrimmed;
+    }
+
+    if (!/^\d+$/.test(trimmed)) {
+      return trimmed;
+    }
+
+    return null;
+  }
+
+  return null;
+};
+
 const loadPipelineMap = async (): Promise<Map<number, string>> => {
   type Pipeline = { id: number; name?: string | null };
   type PipelinesResponse = { data?: Pipeline[] | null };
@@ -577,7 +666,7 @@ const normaliseDeal = async (
 ): Promise<NormalisedDeal> => {
   const client = extractClient(deal);
   const sedeRaw = (deal as Record<string, unknown>)[SEDE_FIELD_KEY];
-  const sedeLabel = sedeRaw != null ? sedeOptions.get(String(sedeRaw)) ?? null : null;
+  const sede = normaliseSedeValue(sedeRaw, sedeOptions);
 
   const addressRaw = (deal as Record<string, unknown>)[ADDRESS_FIELD_KEY];
   const address = typeof addressRaw === 'string' && addressRaw.trim().length > 0 ? addressRaw.trim() : null;
@@ -618,7 +707,7 @@ const normaliseDeal = async (
     title: deal.title,
     clientId: client.id,
     clientName: client.name,
-    sede: sedeLabel,
+    sede,
     address,
     pipelineId,
     pipelineName,
