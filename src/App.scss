@@ -102,6 +102,22 @@
   line-height: 1;
 }
 
+.recommended-hours-label {
+  display: inline-block;
+  width: min(9rem, 100%);
+  text-align: left;
+}
+
+.recommended-hours-field {
+  width: min(9rem, 100%);
+  flex: 0 0 auto;
+}
+
+.recommended-hours-field .form-control,
+.recommended-hours-input {
+  width: 100%;
+}
+
 @media (max-width: 768px) {
   .calendar-card,
   .deals-card {
