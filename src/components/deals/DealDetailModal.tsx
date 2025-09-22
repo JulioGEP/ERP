@@ -50,6 +50,28 @@ type DisplayNote = DealNote & { shareWithTrainer?: boolean | null };
 type DisplayAttachment = DealAttachment;
 type ShareWithTrainerOption = 'yes' | 'no';
 
+const extractNotePreview = (content: string): { preview: string; truncated: boolean } => {
+  const trimmed = content.trim();
+
+  if (!trimmed) {
+    return { preview: 'Sin contenido', truncated: false };
+  }
+
+  const sentenceSeparator = /(?<=[.!?])\s+/u;
+  const sentences = trimmed.split(sentenceSeparator);
+
+  if (sentences.length > 1) {
+    return { preview: sentences[0].trim(), truncated: true };
+  }
+
+  const firstLineBreak = trimmed.indexOf('\n');
+  if (firstLineBreak >= 0) {
+    return { preview: trimmed.slice(0, firstLineBreak).trim(), truncated: true };
+  }
+
+  return { preview: trimmed, truncated: false };
+};
+
 const generateId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -391,8 +413,12 @@ const DealDetailModal = ({
   const [localNotes, setLocalNotes] = useState<StoredDealNote[]>([]);
   const [localDocuments, setLocalDocuments] = useState<StoredDealDocument[]>([]);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [noteModalMode, setNoteModalMode] = useState<'create' | 'view' | 'edit'>('create');
+  const [activeNote, setActiveNote] = useState<DisplayNote | null>(null);
   const [noteText, setNoteText] = useState('');
   const [shareWithTrainer, setShareWithTrainer] = useState<ShareWithTrainerOption>('no');
+  const [noteModalInitialText, setNoteModalInitialText] = useState('');
+  const [noteModalInitialShare, setNoteModalInitialShare] = useState<ShareWithTrainerOption>('no');
   const [noteError, setNoteError] = useState<string | null>(null);
   const [showNoteUnsavedConfirm, setShowNoteUnsavedConfirm] = useState(false);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
@@ -428,6 +454,10 @@ const DealDetailModal = ({
     setDocumentName('');
     setDocumentUrl('');
     setShareWithTrainer('no');
+    setActiveNote(null);
+    setNoteModalMode('create');
+    setNoteModalInitialText('');
+    setNoteModalInitialShare('no');
     setDocumentTarget('general');
     setNoteError(null);
     setDocumentError(null);
@@ -437,7 +467,9 @@ const DealDetailModal = ({
     setSaveError(null);
   }, [deal.id]);
 
-  const isNoteDirty = noteText !== '' || shareWithTrainer !== 'no';
+  const isNoteDirty =
+    noteModalMode !== 'view' &&
+    (noteText !== noteModalInitialText || shareWithTrainer !== noteModalInitialShare);
   const isDocumentDirty =
     documentName !== '' || documentUrl !== '' || documentTarget !== 'general';
 
@@ -447,6 +479,10 @@ const DealDetailModal = ({
     setNoteText('');
     setShareWithTrainer('no');
     setNoteError(null);
+    setActiveNote(null);
+    setNoteModalMode('create');
+    setNoteModalInitialText('');
+    setNoteModalInitialShare('no');
   }, []);
 
   const closeDocumentModal = useCallback(() => {
@@ -872,7 +908,12 @@ const DealDetailModal = ({
     }));
   }, [deal.extraProducts, deal.trainingProducts]);
 
-  const handleAddNote = (): boolean => {
+  const handleSubmitNote = (): boolean => {
+    if (noteModalMode === 'view') {
+      closeNoteModal();
+      return true;
+    }
+
     const trimmed = noteText.trim();
 
     if (!trimmed) {
@@ -880,21 +921,97 @@ const DealDetailModal = ({
       return false;
     }
 
-    const now = new Date().toISOString();
+    if (noteModalMode === 'create') {
+      const now = new Date().toISOString();
 
-    const note: StoredDealNote = {
-      id: generateId(),
-      content: trimmed,
-      createdAt: now,
-      shareWithTrainer: shareWithTrainer === 'yes'
-    };
+      const note: StoredDealNote = {
+        id: generateId(),
+        content: trimmed,
+        createdAt: now,
+        shareWithTrainer: shareWithTrainer === 'yes'
+      };
 
-    const updatedNotes = [...localNotes, note];
+      const updatedNotes = [...localNotes, note];
+      setLocalNotes(updatedNotes);
+      persistExtras(updatedNotes, localDocuments);
+      closeNoteModal();
+      return true;
+    }
+
+    if (noteModalMode === 'edit' && activeNote) {
+      const updatedNotes = localNotes.map((noteItem) => {
+        if (noteItem.id !== activeNote.id) {
+          return noteItem;
+        }
+
+        return {
+          ...noteItem,
+          content: trimmed,
+          shareWithTrainer: shareWithTrainer === 'yes'
+        } satisfies StoredDealNote;
+      });
+
+      setLocalNotes(updatedNotes);
+      persistExtras(updatedNotes, localDocuments);
+      closeNoteModal();
+      return true;
+    }
+
+    setNoteError('No se pudo actualizar la nota seleccionada.');
+    return false;
+  };
+
+  const handleDeleteNote = () => {
+    if (!activeNote || activeNote.source !== 'local') {
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('¿Quieres eliminar esta nota?');
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const updatedNotes = localNotes.filter((noteItem) => noteItem.id !== activeNote.id);
     setLocalNotes(updatedNotes);
     persistExtras(updatedNotes, localDocuments);
     closeNoteModal();
-    return true;
   };
+
+  const handleOpenCreateNoteModal = () => {
+    setNoteModalMode('create');
+    setActiveNote(null);
+    setNoteText('');
+    setShareWithTrainer('no');
+    setNoteModalInitialText('');
+    setNoteModalInitialShare('no');
+    setNoteError(null);
+    setShowNoteUnsavedConfirm(false);
+    setShowNoteModal(true);
+  };
+
+  const handleOpenExistingNoteModal = (note: DisplayNote) => {
+    const shareValue: ShareWithTrainerOption = note.shareWithTrainer ? 'yes' : 'no';
+    setActiveNote(note);
+    setNoteModalMode(note.source === 'local' ? 'edit' : 'view');
+    setNoteText(note.content ?? '');
+    setShareWithTrainer(shareValue);
+    setNoteModalInitialText(note.content ?? '');
+    setNoteModalInitialShare(shareValue);
+    setNoteError(null);
+    setShowNoteUnsavedConfirm(false);
+    setShowNoteModal(true);
+  };
+
+  const isViewingNote = noteModalMode === 'view';
+  const isEditingNote = noteModalMode === 'edit';
+  const noteModalTitle = isViewingNote
+    ? 'Detalle de la nota'
+    : isEditingNote
+      ? 'Editar nota'
+      : 'Añadir nota';
+  const noteSubmitLabel = isEditingNote ? 'Guardar cambios' : 'Guardar nota';
 
   const handleAddDocument = (): boolean => {
     const trimmedName = documentName.trim();
@@ -952,7 +1069,7 @@ const DealDetailModal = ({
   };
 
   const handleConfirmNoteSave = () => {
-    const saved = handleAddNote();
+    const saved = handleSubmitNote();
     if (!saved) {
       setShowNoteUnsavedConfirm(false);
     }
@@ -1204,27 +1321,37 @@ const DealDetailModal = ({
                           <div className="text-uppercase text-muted small">Notas</div>
                           <div className="fw-semibold">Seguimiento</div>
                         </div>
-                        <Button variant="outline-primary" size="sm" onClick={() => setShowNoteModal(true)}>
+                        <Button variant="outline-primary" size="sm" onClick={handleOpenCreateNoteModal}>
                           Añadir nota
                         </Button>
                       </div>
                       {combinedNotes.length > 0 ? (
                         <ListGroup variant="flush" className="border rounded">
-                          {combinedNotes.map((note) => (
-                            <ListGroup.Item key={note.id} className="py-3">
-                              <div className="fw-semibold mb-1">{note.content || 'Sin contenido'}</div>
-                              <div className="small text-muted d-flex flex-wrap gap-3">
-                                <span>{renderNoteOrigin(note)}</span>
-                                {typeof note.shareWithTrainer === 'boolean' ? (
-                                  <span>
-                                    Compartir con formador: {note.shareWithTrainer ? 'Sí' : 'No'}
-                                  </span>
-                                ) : null}
-                                {note.authorName ? <span>Autor: {note.authorName}</span> : null}
-                                {note.createdAt ? <span>{formatDateLabel(note.createdAt)}</span> : null}
-                              </div>
-                            </ListGroup.Item>
-                          ))}
+                          {combinedNotes.map((note) => {
+                            const { preview, truncated } = extractNotePreview(note.content);
+                            return (
+                              <ListGroup.Item
+                                key={note.id}
+                                className="py-3"
+                                action
+                                onClick={() => handleOpenExistingNoteModal(note)}
+                              >
+                                <div className="fw-semibold mb-1" title={note.content}>
+                                  {truncated ? `${preview}…` : preview}
+                                </div>
+                                <div className="small text-muted d-flex flex-wrap gap-3">
+                                  <span>{renderNoteOrigin(note)}</span>
+                                  {typeof note.shareWithTrainer === 'boolean' ? (
+                                    <span>
+                                      Compartir con formador: {note.shareWithTrainer ? 'Sí' : 'No'}
+                                    </span>
+                                  ) : null}
+                                  {note.authorName ? <span>Autor: {note.authorName}</span> : null}
+                                  {note.createdAt ? <span>{formatDateLabel(note.createdAt)}</span> : null}
+                                </div>
+                              </ListGroup.Item>
+                            );
+                          })}
                         </ListGroup>
                       ) : (
                         <div className="text-muted">Sin notas registradas.</div>
@@ -1631,46 +1758,94 @@ const DealDetailModal = ({
 
       <Modal show={showNoteModal} onHide={handleNoteModalClose} centered>
         <Modal.Header closeButton>
-          <Modal.Title>Añadir nota</Modal.Title>
+          <Modal.Title>{noteModalTitle}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {noteError && (
+          {!isViewingNote && noteError ? (
             <Alert variant="danger" onClose={() => setNoteError(null)} dismissible>
               {noteError}
             </Alert>
+          ) : null}
+          {isViewingNote ? (
+            <Stack gap={3}>
+              <div>
+                <div className="text-uppercase text-muted small mb-1">Contenido</div>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{noteText || 'Sin contenido'}</div>
+              </div>
+              {activeNote ? (
+                <div className="small text-muted d-flex flex-wrap gap-3">
+                  <span>{renderNoteOrigin(activeNote)}</span>
+                  {typeof activeNote.shareWithTrainer === 'boolean' ? (
+                    <span>Compartir con formador: {activeNote.shareWithTrainer ? 'Sí' : 'No'}</span>
+                  ) : null}
+                  {activeNote.authorName ? <span>Autor: {activeNote.authorName}</span> : null}
+                  {activeNote.createdAt ? <span>{formatDateLabel(activeNote.createdAt)}</span> : null}
+                </div>
+              ) : null}
+            </Stack>
+          ) : (
+            <Stack gap={3}>
+              <Form.Group controlId="note-content">
+                <Form.Label>Contenido</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={4}
+                  value={noteText}
+                  onChange={(event) => setNoteText(event.target.value)}
+                  placeholder="Añade aquí la nota para el equipo de planificación"
+                />
+              </Form.Group>
+              <Form.Group controlId="note-share-with-trainer">
+                <Form.Label>Compartir con Formador?</Form.Label>
+                <Form.Select
+                  value={shareWithTrainer}
+                  onChange={(event) =>
+                    setShareWithTrainer(event.target.value as ShareWithTrainerOption)
+                  }
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Sí</option>
+                </Form.Select>
+              </Form.Group>
+              {isEditingNote && activeNote ? (
+                <div className="small text-muted d-flex flex-wrap gap-3">
+                  <span>{renderNoteOrigin(activeNote)}</span>
+                  {activeNote.authorName ? <span>Autor: {activeNote.authorName}</span> : null}
+                  {activeNote.createdAt ? <span>{formatDateLabel(activeNote.createdAt)}</span> : null}
+                </div>
+              ) : null}
+            </Stack>
           )}
-          <Stack gap={3}>
-            <Form.Group controlId="note-content">
-              <Form.Label>Contenido</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={4}
-                value={noteText}
-                onChange={(event) => setNoteText(event.target.value)}
-                placeholder="Añade aquí la nota para el equipo de planificación"
-              />
-            </Form.Group>
-            <Form.Group controlId="note-share-with-trainer">
-              <Form.Label>Compartir con Formador?</Form.Label>
-              <Form.Select
-                value={shareWithTrainer}
-                onChange={(event) =>
-                  setShareWithTrainer(event.target.value as ShareWithTrainerOption)
-                }
-              >
-                <option value="no">No</option>
-                <option value="yes">Sí</option>
-              </Form.Select>
-            </Form.Group>
-          </Stack>
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={handleNoteModalClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={handleAddNote}>
-            Guardar nota
-          </Button>
+        <Modal.Footer className={isEditingNote ? 'justify-content-between' : 'justify-content-end'}>
+          {isEditingNote ? (
+            <>
+              <Button variant="outline-danger" onClick={handleDeleteNote}>
+                Eliminar
+              </Button>
+              <div className="d-flex gap-2">
+                <Button variant="secondary" onClick={handleNoteModalClose}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" onClick={handleSubmitNote}>
+                  {noteSubmitLabel}
+                </Button>
+              </div>
+            </>
+          ) : isViewingNote ? (
+            <Button variant="secondary" onClick={handleNoteModalClose}>
+              Cerrar
+            </Button>
+          ) : (
+            <div className="d-flex gap-2">
+              <Button variant="secondary" onClick={handleNoteModalClose}>
+                Cancelar
+              </Button>
+              <Button variant="primary" onClick={handleSubmitNote}>
+                {noteSubmitLabel}
+              </Button>
+            </div>
+          )}
         </Modal.Footer>
       </Modal>
 
