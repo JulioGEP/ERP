@@ -1,3 +1,4 @@
+import type { EventClickArg } from '@fullcalendar/core';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -9,6 +10,7 @@ import { CalendarEvent } from '../../services/calendar';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
+  onSelectEvent?: (event: CalendarEvent) => void;
 }
 
 const buildEventTitle = (event: CalendarEvent) => {
@@ -39,7 +41,7 @@ const buildEventTitle = (event: CalendarEvent) => {
   return segments.join(' · ');
 };
 
-const CalendarView = ({ events }: CalendarViewProps) => (
+const CalendarView = ({ events, onSelectEvent }: CalendarViewProps) => (
   <Card className="calendar-card border-0">
     <Card.Body className="p-0">
       <div className="calendar-scroll-container">
@@ -76,6 +78,17 @@ const CalendarView = ({ events }: CalendarViewProps) => (
               logisticsInfo: event.logisticsInfo
             }
           }))}
+          eventClick={(info: EventClickArg) => {
+            if (!onSelectEvent) {
+              return;
+            }
+
+            const calendarEvent = events.find((item) => item.id === info.event.id);
+
+            if (calendarEvent) {
+              onSelectEvent(calendarEvent);
+            }
+          }}
           locales={[esLocale]}
           locale="es"
         />
