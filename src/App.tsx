@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Button from 'react-bootstrap/Button';
 import Container from 'react-bootstrap/Container';
 import Modal from 'react-bootstrap/Modal';
@@ -23,6 +23,8 @@ const App = () => {
   const [selectedCalendarDealId, setSelectedCalendarDealId] = useState<number | null>(null);
   const [selectedCalendarDeal, setSelectedCalendarDeal] = useState<DealRecord | null>(null);
   const [calendarModalError, setCalendarModalError] = useState<string | null>(null);
+  const dealCacheRef = useRef<Record<number, DealRecord>>({});
+  const activeDealRequestRef = useRef<number | null>(null);
 
   useEffect(() => {
     persistCalendarEvents(calendarEvents);
@@ -35,25 +37,51 @@ const App = () => {
     });
   };
 
-  const loadCalendarDeal = useCallback(async (dealId: number) => {
-    setCalendarModalStatus('loading');
-    setCalendarModalError(null);
-    setSelectedCalendarDeal(null);
+  const loadCalendarDeal = useCallback(
+    async (dealId: number, options?: { forceRefresh?: boolean }) => {
+      activeDealRequestRef.current = dealId;
+      setCalendarModalError(null);
 
-    try {
-      const deal = await fetchDealById(dealId);
-      setSelectedCalendarDeal(deal);
-      setCalendarModalStatus('success');
-    } catch (error) {
-      console.error('No se pudo cargar el presupuesto seleccionado', error);
-      setCalendarModalStatus('error');
-      setCalendarModalError(
-        error instanceof Error
-          ? error.message
-          : 'No se pudo cargar el presupuesto seleccionado. Inténtalo de nuevo más tarde.'
-      );
-    }
-  }, []);
+      const shouldForceRefresh = options?.forceRefresh ?? false;
+      const cachedDeal = shouldForceRefresh ? undefined : dealCacheRef.current[dealId];
+
+      if (cachedDeal) {
+        setSelectedCalendarDeal(cachedDeal);
+        setCalendarModalStatus('success');
+      } else {
+        setSelectedCalendarDeal(null);
+        setCalendarModalStatus('loading');
+      }
+
+      try {
+        const deal = await fetchDealById(dealId);
+
+        if (activeDealRequestRef.current !== dealId) {
+          return;
+        }
+
+        dealCacheRef.current = { ...dealCacheRef.current, [dealId]: deal };
+        setSelectedCalendarDeal(deal);
+        setCalendarModalStatus('success');
+      } catch (error) {
+        if (activeDealRequestRef.current !== dealId) {
+          return;
+        }
+
+        console.error('No se pudo cargar el presupuesto seleccionado', error);
+
+        if (!cachedDeal || shouldForceRefresh) {
+          setCalendarModalStatus('error');
+          setCalendarModalError(
+            error instanceof Error
+              ? error.message
+              : 'No se pudo cargar el presupuesto seleccionado. Inténtalo de nuevo más tarde.'
+          );
+        }
+      }
+    },
+    []
+  );
 
   const handleCalendarEventSelect = useCallback(
     (event: CalendarEvent) => {
@@ -70,6 +98,7 @@ const App = () => {
     setSelectedCalendarDealId(null);
     setSelectedCalendarDeal(null);
     setCalendarModalError(null);
+    activeDealRequestRef.current = null;
   }, []);
 
   const handleCalendarModalRetry = useCallback(() => {
@@ -77,7 +106,7 @@ const App = () => {
       return;
     }
 
-    void loadCalendarDeal(selectedCalendarDealId);
+    void loadCalendarDeal(selectedCalendarDealId, { forceRefresh: true });
   }, [loadCalendarDeal, selectedCalendarDealId]);
 
   const handleCalendarDealRefetch = useCallback(async () => {
@@ -86,6 +115,7 @@ const App = () => {
     }
 
     const refreshed = await fetchDealById(selectedCalendarDealId);
+    dealCacheRef.current = { ...dealCacheRef.current, [selectedCalendarDealId]: refreshed };
     setSelectedCalendarDeal(refreshed);
   }, [selectedCalendarDealId]);
 
