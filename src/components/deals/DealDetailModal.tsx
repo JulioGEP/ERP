@@ -153,6 +153,42 @@ const mobileUnitOptions = [
 const sanitizeSelectionList = (values: string[]): string[] =>
   Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
 
+const normalizeSelectionValue = (value: string): string => value.trim();
+
+const computeAvailableSelectionOptions = (
+  options: string[],
+  values: string[],
+  currentIndex: number
+) => {
+  return options.filter((option) => {
+    const normalizedOption = normalizeSelectionValue(option);
+    const currentValue = normalizeSelectionValue(values[currentIndex]);
+
+    if (currentValue === normalizedOption) {
+      return true;
+    }
+
+    return values.every((value, index) => {
+      if (index === currentIndex) {
+        return true;
+      }
+
+      return normalizeSelectionValue(value) !== normalizedOption;
+    });
+  });
+};
+
+const hasAvailableSelectionOption = (options: string[], values: string[]) => {
+  const normalizedOptions = new Set(options.map((option) => normalizeSelectionValue(option)));
+  const usedValues = new Set(
+    values
+      .map((value) => normalizeSelectionValue(value))
+      .filter((value) => value.length > 0 && normalizedOptions.has(value))
+  );
+
+  return usedValues.size < normalizedOptions.size;
+};
+
 const extractStoredSelectionList = (input: unknown): string[] => {
   if (!Array.isArray(input)) {
     return [];
@@ -500,10 +536,16 @@ const DealDetailModal = ({
   };
 
   const handleAddSessionTrainer = (key: string) => {
-    updateSessionByKey(key, (session) => ({
-      ...session,
-      trainers: appendSelectionSlot(session.trainers)
-    }));
+    updateSessionByKey(key, (session) => {
+      if (!hasAvailableSelectionOption(sessionTrainerOptions, session.trainers)) {
+        return session;
+      }
+
+      return {
+        ...session,
+        trainers: appendSelectionSlot(session.trainers)
+      };
+    });
   };
 
   const handleRemoveSessionTrainer = (key: string, index: number) => {
@@ -521,10 +563,16 @@ const DealDetailModal = ({
   };
 
   const handleAddSessionMobileUnit = (key: string) => {
-    updateSessionByKey(key, (session) => ({
-      ...session,
-      mobileUnits: appendSelectionSlot(session.mobileUnits)
-    }));
+    updateSessionByKey(key, (session) => {
+      if (!hasAvailableSelectionOption(mobileUnitOptions, session.mobileUnits)) {
+        return session;
+      }
+
+      return {
+        ...session,
+        mobileUnits: appendSelectionSlot(session.mobileUnits)
+      };
+    });
   };
 
   const handleRemoveSessionMobileUnit = (key: string, index: number) => {
@@ -1081,12 +1129,22 @@ const DealDetailModal = ({
                           </div>
                         </div>
                         <Stack gap={3}>
-                          {productSessions.map((session) => (
-                            <div key={session.key} className="border rounded p-3 bg-light">
-                              <div className="fw-semibold mb-3">Sesión {session.sessionIndex + 1}</div>
-                              <Row className="g-4 align-items-start">
-                                <Col xl={6}>
-                                  <Row className="g-3">
+                          {productSessions.map((session) => {
+                            const canAddTrainer = hasAvailableSelectionOption(
+                              sessionTrainerOptions,
+                              session.trainers
+                            );
+                            const canAddMobileUnit = hasAvailableSelectionOption(
+                              mobileUnitOptions,
+                              session.mobileUnits
+                            );
+
+                            return (
+                              <div key={session.key} className="border rounded p-3 bg-light">
+                                <div className="fw-semibold mb-3">Sesión {session.sessionIndex + 1}</div>
+                                <Row className="g-4 align-items-start">
+                                  <Col xl={6}>
+                                    <Row className="g-3">
                                     <Col md={6}>
                                       <Form.Group controlId={`start-${session.key}`}>
                                         <Form.Label>Hora y fecha inicio</Form.Label>
@@ -1157,49 +1215,61 @@ const DealDetailModal = ({
                                           type="button"
                                           onClick={() => handleAddSessionTrainer(session.key)}
                                           aria-label="Añadir formador"
+                                          disabled={!canAddTrainer}
                                         >
                                           +
                                         </Button>
                                       </div>
                                       <Stack gap={2}>
-                                        {session.trainers.map((trainer, trainerIndex) => (
-                                          <Stack
-                                            direction="horizontal"
-                                            gap={2}
-                                            key={`${session.key}-trainer-${trainerIndex}`}
-                                          >
-                                            <Form.Select
-                                              value={trainer}
-                                              onChange={(event) =>
-                                                handleSessionTrainerChange(
-                                                  session.key,
-                                                  trainerIndex,
-                                                  event.target.value
-                                                )
-                                              }
+                                        {session.trainers.map((trainer, trainerIndex) => {
+                                          const availableTrainerOptions = computeAvailableSelectionOptions(
+                                            sessionTrainerOptions,
+                                            session.trainers,
+                                            trainerIndex
+                                          );
+
+                                          return (
+                                            <Stack
+                                              direction="horizontal"
+                                              gap={2}
+                                              key={`${session.key}-trainer-${trainerIndex}`}
                                             >
-                                              <option value="">Selecciona un formador</option>
-                                              {sessionTrainerOptions.map((option) => (
-                                                <option key={`${session.key}-trainer-${option}`} value={option}>
-                                                  {option}
-                                                </option>
-                                              ))}
-                                            </Form.Select>
-                                            {session.trainers.length > 1 && (
-                                              <Button
-                                                variant="outline-danger"
-                                                size="sm"
-                                                type="button"
-                                                onClick={() =>
-                                                  handleRemoveSessionTrainer(session.key, trainerIndex)
+                                              <Form.Select
+                                                value={trainer}
+                                                onChange={(event) =>
+                                                  handleSessionTrainerChange(
+                                                    session.key,
+                                                    trainerIndex,
+                                                    event.target.value
+                                                  )
                                                 }
-                                                aria-label="Eliminar formador"
                                               >
-                                                &times;
-                                              </Button>
-                                            )}
-                                          </Stack>
-                                        ))}
+                                                <option value="">Selecciona un formador</option>
+                                                {availableTrainerOptions.map((option) => (
+                                                  <option
+                                                    key={`${session.key}-trainer-${option}`}
+                                                    value={option}
+                                                  >
+                                                    {option}
+                                                  </option>
+                                                ))}
+                                              </Form.Select>
+                                              {session.trainers.length > 1 && (
+                                                <Button
+                                                  variant="outline-danger"
+                                                  size="sm"
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleRemoveSessionTrainer(session.key, trainerIndex)
+                                                  }
+                                                  aria-label="Eliminar formador"
+                                                >
+                                                  &times;
+                                                </Button>
+                                              )}
+                                            </Stack>
+                                          );
+                                        })}
                                       </Stack>
                                     </Form.Group>
                                     <Form.Group controlId={`mobile-units-${session.key}`}>
@@ -1211,49 +1281,59 @@ const DealDetailModal = ({
                                           type="button"
                                           onClick={() => handleAddSessionMobileUnit(session.key)}
                                           aria-label="Añadir unidad móvil"
+                                          disabled={!canAddMobileUnit}
                                         >
                                           +
                                         </Button>
                                       </div>
                                       <Stack gap={2}>
-                                        {session.mobileUnits.map((unit, unitIndex) => (
-                                          <Stack
-                                            direction="horizontal"
-                                            gap={2}
-                                            key={`${session.key}-unit-${unitIndex}`}
-                                          >
-                                            <Form.Select
-                                              value={unit}
-                                              onChange={(event) =>
-                                                handleSessionMobileUnitChange(
-                                                  session.key,
-                                                  unitIndex,
-                                                  event.target.value
-                                                )
-                                              }
+                                        {session.mobileUnits.map((unit, unitIndex) => {
+                                          const availableMobileUnitOptions =
+                                            computeAvailableSelectionOptions(
+                                              mobileUnitOptions,
+                                              session.mobileUnits,
+                                              unitIndex
+                                            );
+
+                                          return (
+                                            <Stack
+                                              direction="horizontal"
+                                              gap={2}
+                                              key={`${session.key}-unit-${unitIndex}`}
                                             >
-                                              <option value="">Selecciona una unidad</option>
-                                              {mobileUnitOptions.map((option) => (
-                                                <option key={`${session.key}-unit-${option}`} value={option}>
-                                                  {option}
-                                                </option>
-                                              ))}
-                                            </Form.Select>
-                                            {session.mobileUnits.length > 1 && (
-                                              <Button
-                                                variant="outline-danger"
-                                                size="sm"
-                                                type="button"
-                                                onClick={() =>
-                                                  handleRemoveSessionMobileUnit(session.key, unitIndex)
+                                              <Form.Select
+                                                value={unit}
+                                                onChange={(event) =>
+                                                  handleSessionMobileUnitChange(
+                                                    session.key,
+                                                    unitIndex,
+                                                    event.target.value
+                                                  )
                                                 }
-                                                aria-label="Eliminar unidad móvil"
                                               >
-                                                &times;
-                                              </Button>
-                                            )}
-                                          </Stack>
-                                        ))}
+                                                <option value="">Selecciona una unidad</option>
+                                                {availableMobileUnitOptions.map((option) => (
+                                                  <option key={`${session.key}-unit-${option}`} value={option}>
+                                                    {option}
+                                                  </option>
+                                                ))}
+                                              </Form.Select>
+                                              {session.mobileUnits.length > 1 && (
+                                                <Button
+                                                  variant="outline-danger"
+                                                  size="sm"
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleRemoveSessionMobileUnit(session.key, unitIndex)
+                                                  }
+                                                  aria-label="Eliminar unidad móvil"
+                                                >
+                                                  &times;
+                                                </Button>
+                                              )}
+                                            </Stack>
+                                          );
+                                        })}
                                       </Stack>
                                     </Form.Group>
                                     <Form.Group controlId={`logistics-${session.key}`}>
@@ -1271,7 +1351,8 @@ const DealDetailModal = ({
                                 </Col>
                               </Row>
                             </div>
-                          ))}
+                            );
+                          })}
                         </Stack>
                       </div>
                     );
