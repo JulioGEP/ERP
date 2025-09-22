@@ -486,8 +486,7 @@ const fetchDealNotes = async (dealId: number): Promise<NormalisedNote[]> => {
 
   try {
     const response = await fetchJson<NotesResponse>(`deals/${dealId}/notes`, {
-      sort_by: 'add_time',
-      sort_direction: 'desc'
+      sort: 'add_time DESC'
     });
 
     const notes = response.data ?? [];
@@ -552,8 +551,7 @@ const fetchProductNotes = async (
 
   try {
     const response = await fetchJson<NotesResponse>(`products/${productId}/notes`, {
-      sort_by: 'add_time',
-      sort_direction: 'desc'
+      sort: 'add_time DESC'
     });
 
     const notes = (response.data ?? [])
