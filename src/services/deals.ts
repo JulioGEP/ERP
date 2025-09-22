@@ -42,6 +42,9 @@ export interface DealRecord {
   clientName: string | null;
   sede: string | null;
   address: string | null;
+  caes: string | null;
+  fundae: string | null;
+  hotelPernocta: string | null;
   pipelineId: number | null;
   pipelineName: string | null;
   wonDate: string | null;
