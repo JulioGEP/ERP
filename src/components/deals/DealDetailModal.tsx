@@ -42,7 +42,7 @@ interface SessionFormEntry {
   sede: string;
   address: string;
   trainers: string[];
-  mobileUnit: string;
+  mobileUnits: string[];
   logisticsInfo: string;
 }
 
@@ -150,6 +150,45 @@ const mobileUnitOptions = [
   'Camión 2'
 ];
 
+const sanitizeSelectionList = (values: string[]): string[] =>
+  Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
+
+const extractStoredSelectionList = (input: unknown): string[] => {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const rawValues = input
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => value.length > 0);
+
+  return sanitizeSelectionList(rawValues);
+};
+
+const appendSelectionSlot = (items: string[]): string[] => {
+  if (items.length === 0) {
+    return [''];
+  }
+
+  return items[items.length - 1].trim().length > 0 ? [...items, ''] : items;
+};
+
+const removeSelectionSlot = (items: string[], index: number): string[] => {
+  const next = items.filter((_, itemIndex) => itemIndex !== index);
+  return next.length > 0 ? next : [''];
+};
+
+const updateSelectionSlot = (items: string[], index: number, value: string): string[] => {
+  const next = [...items];
+
+  while (next.length <= index) {
+    next.push('');
+  }
+
+  next[index] = value;
+  return next;
+};
+
 const DealDetailModal = ({
   show,
   deal,
@@ -218,6 +257,17 @@ const DealDetailModal = ({
       return Array.from({ length: sessionsCount }).map((_, index) => {
         const key = `${product.dealProductId}-${index}`;
         const existingEvent = eventsByKey.get(key);
+        const existingTrainers = extractStoredSelectionList(existingEvent?.trainers);
+        const storedMobileUnits = existingEvent
+          ? extractStoredSelectionList((existingEvent as { mobileUnits?: unknown }).mobileUnits)
+          : [];
+        const legacyMobileUnit = (existingEvent as { mobileUnit?: string | null })?.mobileUnit;
+        const normalizedMobileUnits =
+          storedMobileUnits.length > 0
+            ? storedMobileUnits
+            : typeof legacyMobileUnit === 'string' && legacyMobileUnit.trim().length > 0
+              ? [legacyMobileUnit.trim()]
+              : [];
 
         return {
           key,
@@ -234,10 +284,8 @@ const DealDetailModal = ({
             existingEvent && existingEvent.attendees != null ? String(existingEvent.attendees) : '',
           sede: existingEvent?.sede ?? deal.sede ?? '',
           address: existingEvent?.address ?? deal.address ?? '',
-          trainers: Array.isArray(existingEvent?.trainers)
-            ? [...(existingEvent?.trainers ?? [])]
-            : [],
-          mobileUnit: existingEvent?.mobileUnit ?? '',
+          trainers: existingTrainers.length > 0 ? existingTrainers : [''],
+          mobileUnits: normalizedMobileUnits.length > 0 ? normalizedMobileUnits : [''],
           logisticsInfo: existingEvent?.logisticsInfo ?? ''
         } satisfies SessionFormEntry;
       });
@@ -399,21 +447,55 @@ const DealDetailModal = ({
     );
   };
 
-  const handleSessionTrainersChange = (key: string, values: string[]) => {
-    const sanitized = Array.from(
-      new Set(values.map((item) => item.trim()).filter((item) => item.length > 0))
-    );
-
+  const updateSessionByKey = (
+    key: string,
+    updater: (session: SessionFormEntry) => SessionFormEntry
+  ) => {
     setSessions((previous) =>
-      previous.map((session) =>
-        session.key === key
-          ? {
-              ...session,
-              trainers: sanitized
-            }
-          : session
-      )
+      previous.map((session) => (session.key === key ? updater(session) : session))
     );
+  };
+
+  const handleSessionTrainerChange = (key: string, index: number, value: string) => {
+    updateSessionByKey(key, (session) => ({
+      ...session,
+      trainers: updateSelectionSlot(session.trainers, index, value)
+    }));
+  };
+
+  const handleAddSessionTrainer = (key: string) => {
+    updateSessionByKey(key, (session) => ({
+      ...session,
+      trainers: appendSelectionSlot(session.trainers)
+    }));
+  };
+
+  const handleRemoveSessionTrainer = (key: string, index: number) => {
+    updateSessionByKey(key, (session) => ({
+      ...session,
+      trainers: removeSelectionSlot(session.trainers, index)
+    }));
+  };
+
+  const handleSessionMobileUnitChange = (key: string, index: number, value: string) => {
+    updateSessionByKey(key, (session) => ({
+      ...session,
+      mobileUnits: updateSelectionSlot(session.mobileUnits, index, value)
+    }));
+  };
+
+  const handleAddSessionMobileUnit = (key: string) => {
+    updateSessionByKey(key, (session) => ({
+      ...session,
+      mobileUnits: appendSelectionSlot(session.mobileUnits)
+    }));
+  };
+
+  const handleRemoveSessionMobileUnit = (key: string, index: number) => {
+    updateSessionByKey(key, (session) => ({
+      ...session,
+      mobileUnits: removeSelectionSlot(session.mobileUnits, index)
+    }));
   };
 
   const persistExtras = (notes: StoredDealNote[], documents: StoredDealDocument[]) => {
@@ -449,10 +531,8 @@ const DealDetailModal = ({
 
       const attendeesValue = Number.parseInt(session.attendees, 10);
       const attendees = Number.isFinite(attendeesValue) ? attendeesValue : null;
-      const sanitizedTrainers = Array.from(
-        new Set(session.trainers.map((trainer) => trainer.trim()).filter((trainer) => trainer.length > 0))
-      );
-      const mobileUnit = session.mobileUnit.trim();
+      const sanitizedTrainers = sanitizeSelectionList(session.trainers);
+      const sanitizedMobileUnits = sanitizeSelectionList(session.mobileUnits);
       const logisticsInfo = session.logisticsInfo.trim();
 
       eventsToSave.push({
@@ -469,7 +549,7 @@ const DealDetailModal = ({
         sede: session.sede.trim() ? session.sede.trim() : null,
         address: session.address.trim() ? session.address.trim() : null,
         trainers: sanitizedTrainers,
-        mobileUnit: mobileUnit ? mobileUnit : null,
+        mobileUnits: sanitizedMobileUnits,
         logisticsInfo: logisticsInfo ? logisticsInfo : null
       });
     }
@@ -970,39 +1050,112 @@ const DealDetailModal = ({
                                 <Col xl={6}>
                                   <Stack gap={3}>
                                     <Form.Group controlId={`trainers-${session.key}`}>
-                                      <Form.Label>Formador / Bombero</Form.Label>
-                                      <Form.Select
-                                        multiple
-                                        value={session.trainers}
-                                        onChange={(event) =>
-                                          handleSessionTrainersChange(
-                                            session.key,
-                                            Array.from(event.target.selectedOptions, (option) => option.value)
-                                          )
-                                        }
-                                      >
-                                        {sessionTrainerOptions.map((option) => (
-                                          <option key={`${session.key}-trainer-${option}`} value={option}>
-                                            {option}
-                                          </option>
+                                      <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <Form.Label className="mb-0">Formador / Bombero</Form.Label>
+                                        <Button
+                                          variant="outline-primary"
+                                          size="sm"
+                                          type="button"
+                                          onClick={() => handleAddSessionTrainer(session.key)}
+                                          aria-label="Añadir formador"
+                                        >
+                                          +
+                                        </Button>
+                                      </div>
+                                      <Stack gap={2}>
+                                        {session.trainers.map((trainer, trainerIndex) => (
+                                          <Stack
+                                            direction="horizontal"
+                                            gap={2}
+                                            key={`${session.key}-trainer-${trainerIndex}`}
+                                          >
+                                            <Form.Select
+                                              value={trainer}
+                                              onChange={(event) =>
+                                                handleSessionTrainerChange(
+                                                  session.key,
+                                                  trainerIndex,
+                                                  event.target.value
+                                                )
+                                              }
+                                            >
+                                              <option value="">Selecciona un formador</option>
+                                              {sessionTrainerOptions.map((option) => (
+                                                <option key={`${session.key}-trainer-${option}`} value={option}>
+                                                  {option}
+                                                </option>
+                                              ))}
+                                            </Form.Select>
+                                            {session.trainers.length > 1 && (
+                                              <Button
+                                                variant="outline-danger"
+                                                size="sm"
+                                                type="button"
+                                                onClick={() =>
+                                                  handleRemoveSessionTrainer(session.key, trainerIndex)
+                                                }
+                                                aria-label="Eliminar formador"
+                                              >
+                                                &times;
+                                              </Button>
+                                            )}
+                                          </Stack>
                                         ))}
-                                      </Form.Select>
+                                      </Stack>
                                     </Form.Group>
-                                    <Form.Group controlId={`mobile-unit-${session.key}`}>
-                                      <Form.Label>Unidad móvil</Form.Label>
-                                      <Form.Select
-                                        value={session.mobileUnit}
-                                        onChange={(event) =>
-                                          handleSessionFieldChange(session.key, 'mobileUnit', event.target.value)
-                                        }
-                                      >
-                                        <option value="">Selecciona una unidad</option>
-                                        {mobileUnitOptions.map((option) => (
-                                          <option key={`${session.key}-unit-${option}`} value={option}>
-                                            {option}
-                                          </option>
+                                    <Form.Group controlId={`mobile-units-${session.key}`}>
+                                      <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <Form.Label className="mb-0">Unidad móvil</Form.Label>
+                                        <Button
+                                          variant="outline-primary"
+                                          size="sm"
+                                          type="button"
+                                          onClick={() => handleAddSessionMobileUnit(session.key)}
+                                          aria-label="Añadir unidad móvil"
+                                        >
+                                          +
+                                        </Button>
+                                      </div>
+                                      <Stack gap={2}>
+                                        {session.mobileUnits.map((unit, unitIndex) => (
+                                          <Stack
+                                            direction="horizontal"
+                                            gap={2}
+                                            key={`${session.key}-unit-${unitIndex}`}
+                                          >
+                                            <Form.Select
+                                              value={unit}
+                                              onChange={(event) =>
+                                                handleSessionMobileUnitChange(
+                                                  session.key,
+                                                  unitIndex,
+                                                  event.target.value
+                                                )
+                                              }
+                                            >
+                                              <option value="">Selecciona una unidad</option>
+                                              {mobileUnitOptions.map((option) => (
+                                                <option key={`${session.key}-unit-${option}`} value={option}>
+                                                  {option}
+                                                </option>
+                                              ))}
+                                            </Form.Select>
+                                            {session.mobileUnits.length > 1 && (
+                                              <Button
+                                                variant="outline-danger"
+                                                size="sm"
+                                                type="button"
+                                                onClick={() =>
+                                                  handleRemoveSessionMobileUnit(session.key, unitIndex)
+                                                }
+                                                aria-label="Eliminar unidad móvil"
+                                              >
+                                                &times;
+                                              </Button>
+                                            )}
+                                          </Stack>
                                         ))}
-                                      </Form.Select>
+                                      </Stack>
                                     </Form.Group>
                                     <Form.Group controlId={`logistics-${session.key}`}>
                                       <Form.Label>Info logística</Form.Label>
