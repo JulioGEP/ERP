@@ -6,6 +6,9 @@ const DEFAULT_STAGE_ID = 3;
 const SEDE_FIELD_KEY = '676d6bd51e52999c582c01f67c99a35ed30bf6ae';
 const ADDRESS_FIELD_KEY = '8b2a7570f5ba8aa4754f061cd9dc92fd778376a7';
 const RECOMMENDED_HOURS_FIELD_KEY = '38f11c8876ecde803a027fbf3c9041fda2ae7eb7';
+const CAES_FIELD_KEY = 'e1971bf3a21d48737b682bf8d864ddc5eb15a351';
+const FUNDAE_FIELD_KEY = '245d60d4d18aec40ba888998ef92e5d00e494583';
+const HOTEL_PERNOCTA_FIELD_KEY = 'c3a6daf8eb5b4e59c3c07cda8e01f43439101269';
 const TRAINING_CODE_PREFIX = 'form-';
 
 interface PipedriveDeal {
@@ -99,6 +102,9 @@ interface NormalisedDeal {
   clientName: string | null;
   sede: string | null;
   address: string | null;
+  caes: string | null;
+  fundae: string | null;
+  hotelPernocta: string | null;
   pipelineId: number | null;
   pipelineName: string | null;
   wonDate: string | null;
@@ -707,6 +713,18 @@ const normaliseDeal = async (
   const addressRaw = (deal as Record<string, unknown>)[ADDRESS_FIELD_KEY];
   const address = typeof addressRaw === 'string' && addressRaw.trim().length > 0 ? addressRaw.trim() : null;
 
+  const caesRaw = (deal as Record<string, unknown>)[CAES_FIELD_KEY];
+  const caes = typeof caesRaw === 'string' && caesRaw.trim().length > 0 ? caesRaw.trim() : null;
+
+  const fundaeRaw = (deal as Record<string, unknown>)[FUNDAE_FIELD_KEY];
+  const fundae = typeof fundaeRaw === 'string' && fundaeRaw.trim().length > 0 ? fundaeRaw.trim() : null;
+
+  const hotelPernoctaRaw = (deal as Record<string, unknown>)[HOTEL_PERNOCTA_FIELD_KEY];
+  const hotelPernocta =
+    typeof hotelPernoctaRaw === 'string' && hotelPernoctaRaw.trim().length > 0
+      ? hotelPernoctaRaw.trim()
+      : null;
+
   const pipelineId = toInteger(deal.pipeline_id);
   const pipelineName = pipelineId != null ? pipelineMap.get(pipelineId) ?? null : null;
   const ensureWonDate = async (): Promise<string | null> => {
@@ -756,6 +774,9 @@ const normaliseDeal = async (
     clientName: client.name,
     sede,
     address,
+    caes,
+    fundae,
+    hotelPernocta,
     pipelineId,
     pipelineName,
     wonDate,

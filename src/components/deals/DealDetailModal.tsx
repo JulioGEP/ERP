@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
-import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
 import Col from 'react-bootstrap/Col';
 import Form from 'react-bootstrap/Form';
+import InputGroup from 'react-bootstrap/InputGroup';
 import ListGroup from 'react-bootstrap/ListGroup';
 import Modal from 'react-bootstrap/Modal';
 import Row from 'react-bootstrap/Row';
@@ -294,27 +294,56 @@ const DealDetailModal = ({
 
   const [sessions, setSessions] = useState<SessionFormEntry[]>(initialSessions);
 
-  const initialRecommendedHours = useMemo(() => {
-    const productWithHours = deal.trainingProducts.find(
-      (product) => product.recommendedHours != null
-    );
+  const initialRecommendedHoursByProduct = useMemo(() => {
+    const entries = deal.trainingProducts.map((product) => [
+      product.dealProductId,
+      product.recommendedHours != null ? String(product.recommendedHours) : ''
+    ]);
 
-    if (!productWithHours || productWithHours.recommendedHours == null) {
-      return '';
-    }
-
-    return String(productWithHours.recommendedHours);
+    return Object.fromEntries(entries) as Record<number, string>;
   }, [deal.trainingProducts]);
 
-  const [recommendedHoursInput, setRecommendedHoursInput] = useState(initialRecommendedHours);
+  const [recommendedHoursByProduct, setRecommendedHoursByProduct] = useState(
+    initialRecommendedHoursByProduct
+  );
+  const [generalAddress, setGeneralAddress] = useState(deal.address ?? '');
+  const [caesValue, setCaesValue] = useState(deal.caes ?? '');
+  const [fundaeValue, setFundaeValue] = useState(deal.fundae ?? '');
+  const [hotelPernoctaValue, setHotelPernoctaValue] = useState(deal.hotelPernocta ?? '');
 
   useEffect(() => {
     setSessions(initialSessions);
   }, [initialSessions, show]);
 
   useEffect(() => {
-    setRecommendedHoursInput(initialRecommendedHours);
-  }, [initialRecommendedHours]);
+    if (show) {
+      setRecommendedHoursByProduct(initialRecommendedHoursByProduct);
+    }
+  }, [initialRecommendedHoursByProduct, show]);
+
+  useEffect(() => {
+    if (show) {
+      setGeneralAddress(deal.address ?? '');
+    }
+  }, [deal.address, show]);
+
+  useEffect(() => {
+    if (show) {
+      setCaesValue(deal.caes ?? '');
+    }
+  }, [deal.caes, show]);
+
+  useEffect(() => {
+    if (show) {
+      setFundaeValue(deal.fundae ?? '');
+    }
+  }, [deal.fundae, show]);
+
+  useEffect(() => {
+    if (show) {
+      setHotelPernoctaValue(deal.hotelPernocta ?? '');
+    }
+  }, [deal.hotelPernocta, show]);
 
   const localNoteEntries: DisplayNote[] = useMemo(
     () =>
@@ -365,13 +394,11 @@ const DealDetailModal = ({
     });
   }, [deal.attachments, localAttachmentEntries]);
 
-  const totalSessions = useMemo(
-    () => deal.trainingProducts.reduce((acc, product) => acc + countSessionsForProduct(product), 0),
-    [deal.trainingProducts]
-  );
-
-  const handleRecommendedHoursChange = (value: string) => {
-    setRecommendedHoursInput(value);
+  const handleRecommendedHoursChange = (dealProductId: number, value: string) => {
+    setRecommendedHoursByProduct((previous) => ({
+      ...previous,
+      [dealProductId]: value
+    }));
 
     let parsedHours: number | null = null;
     if (value !== '') {
@@ -381,6 +408,10 @@ const DealDetailModal = ({
 
     setSessions((previous) =>
       previous.map((session) => {
+        if (session.dealProductId !== dealProductId) {
+          return session;
+        }
+
         const updated: SessionFormEntry = {
           ...session,
           recommendedHours: parsedHours
@@ -394,6 +425,11 @@ const DealDetailModal = ({
         return updated;
       })
     );
+  };
+
+  const handleGeneralAddressChange = (value: string) => {
+    setGeneralAddress(value);
+    setSessions((previous) => previous.map((session) => ({ ...session, address: value })));
   };
 
   const handleSessionStartChange = (key: string, value: string) => {
@@ -723,6 +759,8 @@ const DealDetailModal = ({
     return 'Producto';
   };
 
+  const normalizedGeneralAddress = generalAddress.trim();
+
   return (
     <>
       <Modal show={show} onHide={onHide} size="xl" backdrop="static" fullscreen="md-down">
@@ -736,229 +774,290 @@ const DealDetailModal = ({
           <Stack gap={4}>
             <Row className="g-4">
               <Col xl={7} lg={12}>
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h5 className="mb-0">Datos generales</h5>
-                  <Button variant="outline-secondary" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
-                    {isRefreshing ? 'Actualizando…' : 'Actualizar desde Pipedrive'}
-                  </Button>
+                <div className="border rounded p-3 h-100">
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <h5 className="mb-0">Datos generales</h5>
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      onClick={handleRefresh}
+                      disabled={isRefreshing}
+                    >
+                      {isRefreshing ? 'Actualizando…' : 'Actualizar desde Pipedrive'}
+                    </Button>
                 </div>
-                <Row className="g-3">
-                  <Col lg={6} md={6}>
-                    <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Cliente</div>
-                      <div className="fw-semibold">
-                        {deal.clientName ?? 'Sin organización asociada'}
-                      </div>
-                    </div>
-                  </Col>
-                  <Col lg={6} md={6}>
-                    <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Tipo de formación</div>
-                      <div className="fw-semibold">{deal.pipelineName ?? 'Sin embudo definido'}</div>
-                    </div>
-                  </Col>
-                  <Col lg={6} md={6}>
-                    <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Formación</div>
+                  <Stack gap={3}>
+                    <Row className="g-3">
+                      <Col lg={6} md={6}>
+                        <div className="d-flex flex-column gap-1 h-100">
+                          <div className="text-uppercase text-muted small">Cliente</div>
+                          <div className="fw-semibold">
+                            {deal.clientName ?? 'Sin organización asociada'}
+                          </div>
+                        </div>
+                      </Col>
+                      <Col lg={6} md={6}>
+                        <div className="d-flex flex-column gap-1 h-100">
+                          <div className="text-uppercase text-muted small">Tipo de formación</div>
+                          <div className="fw-semibold">{deal.pipelineName ?? 'Sin embudo definido'}</div>
+                        </div>
+                      </Col>
+                    </Row>
+                    <div>
+                      <div className="text-uppercase text-muted small mb-2">Formación</div>
                       {deal.trainingProducts.length > 0 ? (
-                        <Stack direction="horizontal" className="flex-wrap" gap={2}>
+                        <Stack gap={2}>
                           {deal.trainingProducts.map((product) => (
-                            <Badge
-                              key={product.dealProductId}
-                              bg="info"
-                              text="dark"
-                              className="px-3 py-2 rounded-pill"
-                            >
-                              {product.name}
-                            </Badge>
+                            <Row key={product.dealProductId} className="g-2 align-items-center">
+                              <Col md={8} sm={7}>
+                                <div className="fw-semibold text-truncate" title={product.name}>
+                                  {product.name}
+                                </div>
+                              </Col>
+                              <Col md={4} sm={5}>
+                                <Form.Group
+                                  controlId={`recommended-hours-${product.dealProductId}`}
+                                  className="mb-0"
+                                >
+                                  <Form.Label className="text-uppercase text-muted small">Horas</Form.Label>
+                                  <Form.Control
+                                    type="number"
+                                    min={0}
+                                    step={0.5}
+                                    value={recommendedHoursByProduct[product.dealProductId] ?? ''}
+                                    onChange={(event) =>
+                                      handleRecommendedHoursChange(product.dealProductId, event.target.value)
+                                    }
+                                    placeholder="Sin horas"
+                                  />
+                                </Form.Group>
+                              </Col>
+                            </Row>
                           ))}
                         </Stack>
                       ) : (
                         <div className="text-muted">Sin productos formativos</div>
                       )}
                     </div>
-                  </Col>
-                  <Col lg={3} md={3}>
-                    <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Número de sesiones</div>
-                      <div className="fw-semibold">{totalSessions}</div>
-                    </div>
-                  </Col>
-                  <Col lg={3} md={3}>
-                    <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Horas recomendadas</div>
-                      <Form.Control
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        value={recommendedHoursInput}
-                        onChange={(event) => handleRecommendedHoursChange(event.target.value)}
-                        placeholder="Sin horas recomendadas"
-                        disabled={deal.trainingProducts.length === 0}
-                      />
-                    </div>
-                  </Col>
-                  <Col lg={6} md={6}>
-                    <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Sede</div>
-                      <div className="fw-semibold">{deal.sede ?? 'Sin sede'}</div>
-                    </div>
-                  </Col>
-                  <Col lg={6} md={6}>
-                    <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Dirección de la formación</div>
-                      {deal.address ? (
-                        <Button variant="link" className="px-0" onClick={() => setMapVisible(true)}>
-                          {deal.address}
-                        </Button>
-                      ) : (
-                        <div className="text-muted">Sin dirección definida</div>
-                      )}
-                    </div>
-                  </Col>
-                </Row>
+                    <Row className="g-3 align-items-end">
+                      <Col lg={8} md={12}>
+                        <Form.Group controlId="general-address">
+                          <Form.Label>Dirección de la formación</Form.Label>
+                          <InputGroup>
+                            <Form.Control
+                              type="text"
+                              value={generalAddress}
+                              onChange={(event) => handleGeneralAddressChange(event.target.value)}
+                              placeholder="Sin dirección definida"
+                            />
+                            <Button
+                              variant="outline-secondary"
+                              type="button"
+                              onClick={() => setMapVisible(true)}
+                              disabled={normalizedGeneralAddress.length === 0}
+                            >
+                              Ver mapa
+                            </Button>
+                          </InputGroup>
+                        </Form.Group>
+                      </Col>
+                      <Col lg={4} md={12}>
+                        <Form.Group controlId="general-sede">
+                          <Form.Label>Sede</Form.Label>
+                          <div className="fw-semibold">{deal.sede ?? 'Sin sede'}</div>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                    <Row className="g-3">
+                      <Col lg={4} md={6}>
+                        <Form.Group controlId="general-caes">
+                          <Form.Label>CAES</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={caesValue}
+                            onChange={(event) => setCaesValue(event.target.value)}
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col lg={4} md={6}>
+                        <Form.Group controlId="general-fundae">
+                          <Form.Label>FUNDAE</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={fundaeValue}
+                            onChange={(event) => setFundaeValue(event.target.value)}
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col lg={4} md={12}>
+                        <Form.Group controlId="general-hotel-pernocta">
+                          <Form.Label>Hotel y Pernocta</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={hotelPernoctaValue}
+                            onChange={(event) => setHotelPernoctaValue(event.target.value)}
+                          />
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                  </Stack>
+                </div>
               </Col>
               <Col xl={5} lg={12}>
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h5 className="mb-0">Extras</h5>
+                <div className="border rounded p-3 h-100">
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <h5 className="mb-0">Extras</h5>
+                  </div>
+                  <Stack gap={3}>
+                    <div className="border rounded p-3">
+                      <div className="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                          <div className="text-uppercase text-muted small">Notas</div>
+                          <div className="fw-semibold">Seguimiento</div>
+                        </div>
+                        <Button variant="outline-primary" size="sm" onClick={() => setShowNoteModal(true)}>
+                          Añadir nota
+                        </Button>
+                      </div>
+                      {combinedNotes.length > 0 ? (
+                        <ListGroup variant="flush" className="border rounded">
+                          {combinedNotes.map((note) => (
+                            <ListGroup.Item key={note.id} className="py-3">
+                              <div className="fw-semibold mb-1">{note.content || 'Sin contenido'}</div>
+                              <div className="small text-muted d-flex flex-wrap gap-3">
+                                <span>{renderNoteOrigin(note)}</span>
+                                {note.authorName ? <span>Autor: {note.authorName}</span> : null}
+                                {note.createdAt ? <span>{formatDateLabel(note.createdAt)}</span> : null}
+                              </div>
+                            </ListGroup.Item>
+                          ))}
+                        </ListGroup>
+                      ) : (
+                        <div className="text-muted">Sin notas registradas.</div>
+                      )}
+                    </div>
+                    <div className="border rounded p-3">
+                      <div className="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                          <div className="text-uppercase text-muted small">Adjuntos</div>
+                          <div className="fw-semibold">Documentación</div>
+                        </div>
+                        <Button variant="outline-primary" size="sm" onClick={() => setShowDocumentModal(true)}>
+                          Añadir documento
+                        </Button>
+                      </div>
+                      {combinedAttachments.length > 0 ? (
+                        <Table size="sm" responsive className="mb-0">
+                          <thead>
+                            <tr>
+                              <th>Documento</th>
+                              <th>Origen</th>
+                              <th className="text-end">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {combinedAttachments.map((attachment) => (
+                              <tr key={attachment.id}>
+                                <td>
+                                  <div className="fw-semibold">{attachment.name}</div>
+                                  {attachment.addedAt ? (
+                                    <div className="small text-muted">{formatDateLabel(attachment.addedAt)}</div>
+                                  ) : null}
+                                </td>
+                                <td className="text-muted">{renderAttachmentOrigin(attachment)}</td>
+                                <td className="text-end">
+                                  <Stack direction="horizontal" gap={2} className="justify-content-end">
+                                    <Button
+                                      as="a"
+                                      variant="link"
+                                      size="sm"
+                                      href={attachment.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      Ver
+                                    </Button>
+                                    <Button
+                                      as="a"
+                                      variant="link"
+                                      size="sm"
+                                      href={attachment.downloadUrl ?? attachment.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      Descargar
+                                    </Button>
+                                  </Stack>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </Table>
+                      ) : (
+                        <div className="text-muted">Sin archivos disponibles.</div>
+                      )}
+                    </div>
+                    <div className="border rounded p-3">
+                      <div className="text-uppercase text-muted small mb-2">Productos extras</div>
+                      {deal.extraProducts.length > 0 ? (
+                        <Table responsive size="sm" className="mb-0">
+                          <thead>
+                            <tr>
+                              <th>Producto</th>
+                              <th>Cantidad</th>
+                              <th>Notas</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {deal.extraProducts.map((product) => (
+                              <tr key={`extra-${product.dealProductId}`}>
+                                <td>{product.name}</td>
+                                <td>{product.quantity}</td>
+                                <td>
+                                  {product.notes.length > 0 ? (
+                                    <ul className="mb-0 ps-3">
+                                      {product.notes.map((note) => (
+                                        <li key={`extra-note-${note.id}`}>{note.content}</li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <span className="text-muted">Sin notas</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </Table>
+                      ) : (
+                        <div className="text-muted">No hay productos extras registrados.</div>
+                      )}
+                    </div>
+                  </Stack>
                 </div>
-                <Stack gap={3}>
-                  <div className="border rounded p-3">
-                    <div className="d-flex justify-content-between align-items-center mb-3">
-                      <div>
-                        <div className="text-uppercase text-muted small">Notas</div>
-                        <div className="fw-semibold">Seguimiento</div>
-                      </div>
-                      <Button variant="outline-primary" size="sm" onClick={() => setShowNoteModal(true)}>
-                        Añadir nota
-                      </Button>
-                    </div>
-                    {combinedNotes.length > 0 ? (
-                      <ListGroup variant="flush" className="border rounded">
-                        {combinedNotes.map((note) => (
-                          <ListGroup.Item key={note.id} className="py-3">
-                            <div className="fw-semibold mb-1">{note.content || 'Sin contenido'}</div>
-                            <div className="small text-muted d-flex flex-wrap gap-3">
-                              <span>{renderNoteOrigin(note)}</span>
-                              {note.authorName ? <span>Autor: {note.authorName}</span> : null}
-                              {note.createdAt ? <span>{formatDateLabel(note.createdAt)}</span> : null}
-                            </div>
-                          </ListGroup.Item>
-                        ))}
-                      </ListGroup>
-                    ) : (
-                      <div className="text-muted">Sin notas registradas.</div>
-                    )}
-                  </div>
-                  <div className="border rounded p-3">
-                    <div className="d-flex justify-content-between align-items-center mb-3">
-                      <div>
-                        <div className="text-uppercase text-muted small">Adjuntos</div>
-                        <div className="fw-semibold">Documentación</div>
-                      </div>
-                      <Button variant="outline-primary" size="sm" onClick={() => setShowDocumentModal(true)}>
-                        Añadir documento
-                      </Button>
-                    </div>
-                    {combinedAttachments.length > 0 ? (
-                      <Table size="sm" responsive className="mb-0">
-                        <thead>
-                          <tr>
-                            <th>Documento</th>
-                            <th>Origen</th>
-                            <th className="text-end">Acciones</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {combinedAttachments.map((attachment) => (
-                            <tr key={attachment.id}>
-                              <td>
-                                <div className="fw-semibold">{attachment.name}</div>
-                                {attachment.addedAt ? (
-                                  <div className="small text-muted">{formatDateLabel(attachment.addedAt)}</div>
-                                ) : null}
-                              </td>
-                              <td className="text-muted">{renderAttachmentOrigin(attachment)}</td>
-                              <td className="text-end">
-                                <Stack direction="horizontal" gap={2} className="justify-content-end">
-                                  <Button
-                                    as="a"
-                                    variant="link"
-                                    size="sm"
-                                    href={attachment.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    Ver
-                                  </Button>
-                                  <Button
-                                    as="a"
-                                    variant="link"
-                                    size="sm"
-                                    href={attachment.downloadUrl ?? attachment.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    Descargar
-                                  </Button>
-                                </Stack>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </Table>
-                    ) : (
-                      <div className="text-muted">Sin archivos disponibles.</div>
-                    )}
-                  </div>
-                  <div className="border rounded p-3">
-                    <div className="text-uppercase text-muted small mb-2">Productos extras</div>
-                    {deal.extraProducts.length > 0 ? (
-                      <Table responsive size="sm" className="mb-0">
-                        <thead>
-                          <tr>
-                            <th>Producto</th>
-                            <th>Cantidad</th>
-                            <th>Notas</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {deal.extraProducts.map((product) => (
-                            <tr key={`extra-${product.dealProductId}`}>
-                              <td>{product.name}</td>
-                              <td>{product.quantity}</td>
-                              <td>
-                                {product.notes.length > 0 ? (
-                                  <ul className="mb-0 ps-3">
-                                    {product.notes.map((note) => (
-                                      <li key={`extra-note-${note.id}`}>{note.content}</li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <span className="text-muted">Sin notas</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </Table>
-                    ) : (
-                      <div className="text-muted">No hay productos extras registrados.</div>
-                    )}
-                  </div>
-                </Stack>
               </Col>
             </Row>
 
-            <div>
-              <h5 className="mb-3">Calendarización</h5>
+            <div className="border rounded p-3">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h5 className="mb-0">Calendarización</h5>
+              </div>
               {saveFeedback && (
-                <Alert variant="success" onClose={() => setSaveFeedback(null)} dismissible>
+                <Alert
+                  variant="success"
+                  onClose={() => setSaveFeedback(null)}
+                  dismissible
+                  className="mb-3"
+                >
                   {saveFeedback}
                 </Alert>
               )}
               {saveError && (
-                <Alert variant="danger" onClose={() => setSaveError(null)} dismissible>
+                <Alert
+                  variant="danger"
+                  onClose={() => setSaveError(null)}
+                  dismissible
+                  className="mb-3"
+                >
                   {saveError}
                 </Alert>
               )}
@@ -1298,11 +1397,11 @@ const DealDetailModal = ({
           <Modal.Title>Ubicación de la formación</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {deal.address ? (
+          {normalizedGeneralAddress ? (
             <div className="ratio ratio-16x9">
               <iframe
                 title="Ubicación"
-                src={`https://www.google.com/maps?q=${encodeURIComponent(deal.address)}&output=embed`}
+                src={`https://www.google.com/maps?q=${encodeURIComponent(normalizedGeneralAddress)}&output=embed`}
                 allowFullScreen
               />
             </div>
@@ -1313,11 +1412,15 @@ const DealDetailModal = ({
         <Modal.Footer>
           <Button
             as="a"
-            href={deal.address ? `https://www.google.com/maps?q=${encodeURIComponent(deal.address)}` : '#'}
+            href={
+              normalizedGeneralAddress
+                ? `https://www.google.com/maps?q=${encodeURIComponent(normalizedGeneralAddress)}`
+                : '#'
+            }
             target="_blank"
             rel="noopener noreferrer"
             variant="primary"
-            disabled={!deal.address}
+            disabled={normalizedGeneralAddress.length === 0}
           >
             Abrir en Google Maps
           </Button>
