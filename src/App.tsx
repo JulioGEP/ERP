@@ -175,7 +175,7 @@ const App = () => {
         </Modal>
       )}
 
-      {isCalendarModalOpen && calendarModalStatus === 'success' && selectedCalendarDeal && (
+      {isCalendarModalOpen && selectedCalendarDeal && (
         <DealDetailModal
           show
           deal={selectedCalendarDeal}
@@ -183,6 +183,7 @@ const App = () => {
           events={calendarEvents}
           onUpdateSchedule={handleUpdateSchedule}
           onDealRefetch={handleCalendarDealRefetch}
+          isLoading={calendarModalStatus === 'loading'}
         />
       )}
     </div>

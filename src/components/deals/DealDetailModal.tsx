@@ -27,6 +27,7 @@ interface DealDetailModalProps {
   onHide: () => void;
   onUpdateSchedule: (dealId: number, events: CalendarEvent[]) => void;
   onDealRefetch: () => Promise<void> | void;
+  isLoading: boolean;
 }
 
 interface SessionFormEntry {
@@ -410,7 +411,8 @@ const DealDetailModal = ({
   events,
   onHide,
   onUpdateSchedule,
-  onDealRefetch
+  onDealRefetch,
+  isLoading
 }: DealDetailModalProps) => {
   const [localNotes, setLocalNotes] = useState<StoredDealNote[]>([]);
   const [localDocuments, setLocalDocuments] = useState<StoredDealDocument[]>([]);
@@ -432,6 +434,7 @@ const DealDetailModal = ({
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const isBusy = isLoading || isRefreshing;
   const [mapVisible, setMapVisible] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
@@ -877,6 +880,10 @@ const DealDetailModal = ({
   };
 
   const handleSaveSchedule = () => {
+    if (isBusy) {
+      return;
+    }
+
     setSaveError(null);
     setSaveFeedback(null);
 
@@ -1129,6 +1136,10 @@ const DealDetailModal = ({
   };
 
   const handleRefresh = async () => {
+    if (isLoading || isRefreshing) {
+      return;
+    }
+
     try {
       setIsRefreshing(true);
       await onDealRefetch();
@@ -1200,7 +1211,22 @@ const DealDetailModal = ({
           </div>
         </Modal.Header>
         <Modal.Body>
-          <Stack gap={4}>
+          <div className="position-relative">
+            {isLoading ? (
+              <div
+                className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column justify-content-center align-items-center bg-white bg-opacity-75"
+                style={{ zIndex: 1 }}
+                aria-live="polite"
+              >
+                <div className="spinner-border" role="status" aria-hidden="true" />
+                <div className="mt-3">Cargando presupuesto...</div>
+              </div>
+            ) : null}
+            <Stack
+              gap={4}
+              aria-busy={isLoading}
+              style={isLoading ? { pointerEvents: 'none', userSelect: 'none' } : undefined}
+            >
             <Row className="g-4">
               <Col xl={7} lg={12}>
                 <div className="border rounded p-3 h-100">
@@ -1210,9 +1236,13 @@ const DealDetailModal = ({
                       variant="outline-secondary"
                       size="sm"
                       onClick={handleRefresh}
-                      disabled={isRefreshing}
+                      disabled={isBusy}
                     >
-                      {isRefreshing ? 'Actualizando…' : 'Actualizar desde Pipedrive'}
+                      {isRefreshing
+                        ? 'Actualizando…'
+                        : isLoading
+                          ? 'Cargando…'
+                          : 'Actualizar desde Pipedrive'}
                     </Button>
                 </div>
                   <Stack gap={3}>
@@ -1846,8 +1876,9 @@ const DealDetailModal = ({
               )}
             </div>
           </Stack>
-        </Modal.Body>
-        <Modal.Footer className="justify-content-between">
+        </div>
+      </Modal.Body>
+      <Modal.Footer className="justify-content-between">
           <div className="text-muted small">
             Los cambios se guardan en el calendario interno de planificación.
           </div>
@@ -1855,7 +1886,11 @@ const DealDetailModal = ({
             <Button variant="secondary" onClick={onHide}>
               Cerrar
             </Button>
-            <Button variant="primary" onClick={handleSaveSchedule} disabled={deal.trainingProducts.length === 0}>
+            <Button
+              variant="primary"
+              onClick={handleSaveSchedule}
+              disabled={isBusy || deal.trainingProducts.length === 0}
+            >
               Guardar en calendario
             </Button>
           </div>
