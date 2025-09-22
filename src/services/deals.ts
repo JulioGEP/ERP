@@ -52,14 +52,14 @@ export interface DealRecord {
   attachments: DealAttachment[];
 }
 
-interface DealsResponse {
-  deals: DealRecord[];
-}
+type DealsResponse = {
+  deals?: unknown;
+};
 
-interface DealResponse {
-  deal?: DealRecord | null;
+type DealResponse = {
+  deal?: unknown;
   message?: string;
-}
+};
 
 const parseErrorMessage = async (response: Response) => {
   try {
@@ -71,6 +71,16 @@ const parseErrorMessage = async (response: Response) => {
   }
 };
 
+const normaliseDealRecords = (value: unknown): DealRecord[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => sanitizeDealRecord(item))
+    .filter((deal): deal is DealRecord => deal !== null);
+};
+
 export const fetchDeals = async (): Promise<DealRecord[]> => {
   const response = await fetch('/.netlify/functions/deals');
 
@@ -79,7 +89,7 @@ export const fetchDeals = async (): Promise<DealRecord[]> => {
   }
 
   const payload = (await response.json()) as DealsResponse;
-  return payload.deals ?? [];
+  return normaliseDealRecords(payload.deals);
 };
 
 export const fetchDealById = async (dealId: number): Promise<DealRecord> => {
@@ -91,11 +101,13 @@ export const fetchDealById = async (dealId: number): Promise<DealRecord> => {
 
   const payload = (await response.json()) as DealResponse;
 
-  if (!payload.deal) {
+  const deal = sanitizeDealRecord(payload.deal);
+
+  if (!deal) {
     throw new Error(payload.message || 'No se encontró el presupuesto solicitado.');
   }
 
-  return payload.deal;
+  return deal;
 };
 
 const MANUAL_DEALS_STORAGE_KEY = 'erp-manual-deals-v1';
@@ -229,12 +241,17 @@ const sanitizeDealRecord = (value: unknown): DealRecord | null => {
     return null;
   }
 
-  const candidate = value as Partial<DealRecord>;
+  const candidate = value as Partial<DealRecord> & Record<string, unknown>;
   const identifier = parseNumber(candidate.id, Number.NaN);
 
   if (!Number.isFinite(identifier)) {
     return null;
   }
+
+  const wonDate =
+    parseOptionalString(candidate.wonDate) ??
+    parseOptionalString(candidate['won_time']) ??
+    parseOptionalString(candidate['wonTime']);
 
   return {
     id: identifier,
@@ -245,7 +262,7 @@ const sanitizeDealRecord = (value: unknown): DealRecord | null => {
     address: parseOptionalString(candidate.address),
     pipelineId: parseOptionalNumber(candidate.pipelineId),
     pipelineName: parseOptionalString(candidate.pipelineName),
-    wonDate: parseOptionalString(candidate.wonDate),
+    wonDate,
     formations: parseStringArray(candidate.formations),
     trainingProducts: parseDealProducts(candidate.trainingProducts),
     extraProducts: parseDealProducts(candidate.extraProducts),
