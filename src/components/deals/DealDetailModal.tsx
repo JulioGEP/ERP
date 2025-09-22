@@ -566,100 +566,101 @@ const DealDetailModal = ({
         </Modal.Header>
         <Modal.Body>
           <Stack gap={4}>
-            <div>
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <h5 className="mb-0">Datos generales</h5>
-                <Button variant="outline-secondary" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
-                  {isRefreshing ? 'Actualizando…' : 'Actualizar desde Pipedrive'}
-                </Button>
-              </div>
-              <Row className="g-3">
-                <Col lg={4} md={6}>
-                  <div className="border rounded p-3 h-100">
-                    <div className="text-uppercase text-muted small mb-1">Número de presupuesto</div>
-                    <div className="fw-semibold">#{deal.id}</div>
-                  </div>
-                </Col>
-                <Col lg={4} md={6}>
-                  <div className="border rounded p-3 h-100">
-                    <div className="text-uppercase text-muted small mb-1">Cliente</div>
-                    <div className="fw-semibold">
-                      {deal.clientName ?? 'Sin organización asociada'}
-                      {deal.clientId ? <span className="text-muted"> · #{deal.clientId}</span> : null}
+            <Row className="g-4">
+              <Col xl={7} lg={12}>
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h5 className="mb-0">Datos generales</h5>
+                  <Button variant="outline-secondary" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+                    {isRefreshing ? 'Actualizando…' : 'Actualizar desde Pipedrive'}
+                  </Button>
+                </div>
+                <Row className="g-3">
+                  <Col lg={6} md={6}>
+                    <div className="border rounded p-3 h-100">
+                      <div className="text-uppercase text-muted small mb-1">Número de presupuesto</div>
+                      <div className="fw-semibold">#{deal.id}</div>
                     </div>
-                  </div>
-                </Col>
-                <Col lg={4} md={6}>
-                  <div className="border rounded p-3 h-100">
-                    <div className="text-uppercase text-muted small mb-1">Tipo de formación</div>
-                    <div className="fw-semibold">{deal.pipelineName ?? 'Sin embudo definido'}</div>
-                  </div>
-                </Col>
-                <Col lg={6} md={6}>
-                  <div className="border rounded p-3 h-100">
-                    <div className="text-uppercase text-muted small mb-1">Formación</div>
-                    {deal.trainingProducts.length > 0 ? (
-                      <Stack direction="horizontal" className="flex-wrap" gap={2}>
-                        {deal.trainingProducts.map((product) => (
-                          <Badge key={product.dealProductId} bg="info" text="dark" className="px-3 py-2 rounded-pill">
-                            {product.name}
-                          </Badge>
-                        ))}
-                      </Stack>
-                    ) : (
-                      <div className="text-muted">Sin productos form-</div>
-                    )}
-                  </div>
-                </Col>
-                <Col lg={3} md={6}>
-                  <div className="border rounded p-3 h-100">
-                    <div className="text-uppercase text-muted small mb-1">Número de sesiones</div>
-                    <div className="fw-semibold">{totalSessions}</div>
-                  </div>
-                </Col>
-                <Col lg={3} md={6}>
-                  <div className="border rounded p-3 h-100">
-                    <div className="text-uppercase text-muted small mb-1">Sede</div>
-                    <div className="fw-semibold">{deal.sede ?? 'Sin sede'}</div>
-                  </div>
-                </Col>
-                <Col lg={6} md={6}>
-                  <div className="border rounded p-3 h-100">
-                    <div className="text-uppercase text-muted small mb-1">Dirección de la formación</div>
-                    {deal.address ? (
-                      <Button variant="link" className="px-0" onClick={() => setMapVisible(true)}>
-                        {deal.address}
-                      </Button>
-                    ) : (
-                      <div className="text-muted">Sin dirección definida</div>
-                    )}
-                  </div>
-                </Col>
-                <Col lg={6} md={6}>
-                  <div className="border rounded p-3 h-100">
-                    <div className="text-uppercase text-muted small mb-1">Horas recomendadas</div>
-                    {deal.trainingProducts.length > 0 ? (
-                      <ul className="mb-0 ps-3">
-                        {deal.trainingProducts.map((product) => (
-                          <li key={`hours-${product.dealProductId}`}>
-                            <span className="fw-semibold">{product.name}:</span>{' '}
-                            {product.recommendedHoursRaw ?? 'Sin información'}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="text-muted">Sin información disponible</div>
-                    )}
-                  </div>
-                </Col>
-              </Row>
-            </div>
-
-            <div>
-              <h5 className="mb-3">Extras</h5>
-              <Row className="g-3">
-                <Col lg={6}>
-                  <div className="border rounded p-3 h-100">
+                  </Col>
+                  <Col lg={6} md={6}>
+                    <div className="border rounded p-3 h-100">
+                      <div className="text-uppercase text-muted small mb-1">Cliente</div>
+                      <div className="fw-semibold">
+                        {deal.clientName ?? 'Sin organización asociada'}
+                        {deal.clientId ? <span className="text-muted"> · #{deal.clientId}</span> : null}
+                      </div>
+                    </div>
+                  </Col>
+                  <Col lg={6} md={6}>
+                    <div className="border rounded p-3 h-100">
+                      <div className="text-uppercase text-muted small mb-1">Tipo de formación</div>
+                      <div className="fw-semibold">{deal.pipelineName ?? 'Sin embudo definido'}</div>
+                    </div>
+                  </Col>
+                  <Col lg={6} md={6}>
+                    <div className="border rounded p-3 h-100">
+                      <div className="text-uppercase text-muted small mb-1">Formación</div>
+                      {deal.trainingProducts.length > 0 ? (
+                        <Stack direction="horizontal" className="flex-wrap" gap={2}>
+                          {deal.trainingProducts.map((product) => (
+                            <Badge key={product.dealProductId} bg="info" text="dark" className="px-3 py-2 rounded-pill">
+                              {product.name}
+                            </Badge>
+                          ))}
+                        </Stack>
+                      ) : (
+                        <div className="text-muted">Sin productos form-</div>
+                      )}
+                    </div>
+                  </Col>
+                  <Col lg={6} md={6}>
+                    <div className="border rounded p-3 h-100">
+                      <div className="text-uppercase text-muted small mb-1">Número de sesiones</div>
+                      <div className="fw-semibold">{totalSessions}</div>
+                    </div>
+                  </Col>
+                  <Col lg={6} md={6}>
+                    <div className="border rounded p-3 h-100">
+                      <div className="text-uppercase text-muted small mb-1">Sede</div>
+                      <div className="fw-semibold">{deal.sede ?? 'Sin sede'}</div>
+                    </div>
+                  </Col>
+                  <Col lg={12}>
+                    <div className="border rounded p-3 h-100">
+                      <div className="text-uppercase text-muted small mb-1">Dirección de la formación</div>
+                      {deal.address ? (
+                        <Button variant="link" className="px-0" onClick={() => setMapVisible(true)}>
+                          {deal.address}
+                        </Button>
+                      ) : (
+                        <div className="text-muted">Sin dirección definida</div>
+                      )}
+                    </div>
+                  </Col>
+                  <Col lg={12}>
+                    <div className="border rounded p-3 h-100">
+                      <div className="text-uppercase text-muted small mb-1">Horas recomendadas</div>
+                      {deal.trainingProducts.length > 0 ? (
+                        <ul className="mb-0 ps-3">
+                          {deal.trainingProducts.map((product) => (
+                            <li key={`hours-${product.dealProductId}`}>
+                              <span className="fw-semibold">{product.name}:</span>{' '}
+                              {product.recommendedHoursRaw ?? 'Sin información'}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-muted">Sin información disponible</div>
+                      )}
+                    </div>
+                  </Col>
+                </Row>
+              </Col>
+              <Col xl={5} lg={12}>
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h5 className="mb-0">Extras</h5>
+                </div>
+                <Stack gap={3}>
+                  <div className="border rounded p-3">
                     <div className="d-flex justify-content-between align-items-center mb-3">
                       <div>
                         <div className="text-uppercase text-muted small">Notas</div>
@@ -686,9 +687,7 @@ const DealDetailModal = ({
                       <div className="text-muted">Sin notas registradas.</div>
                     )}
                   </div>
-                </Col>
-                <Col lg={6}>
-                  <div className="border rounded p-3 h-100">
+                  <div className="border rounded p-3">
                     <div className="d-flex justify-content-between align-items-center mb-3">
                       <div>
                         <div className="text-uppercase text-muted small">Adjuntos</div>
@@ -749,8 +748,6 @@ const DealDetailModal = ({
                       <div className="text-muted">Sin archivos disponibles.</div>
                     )}
                   </div>
-                </Col>
-                <Col lg={12}>
                   <div className="border rounded p-3">
                     <div className="text-uppercase text-muted small mb-2">Productos extras</div>
                     {deal.extraProducts.length > 0 ? (
@@ -758,7 +755,6 @@ const DealDetailModal = ({
                         <thead>
                           <tr>
                             <th>Producto</th>
-                            <th>Código</th>
                             <th>Cantidad</th>
                             <th>Notas</th>
                           </tr>
@@ -767,7 +763,6 @@ const DealDetailModal = ({
                           {deal.extraProducts.map((product) => (
                             <tr key={`extra-${product.dealProductId}`}>
                               <td>{product.name}</td>
-                              <td>{product.code ?? '—'}</td>
                               <td>{product.quantity}</td>
                               <td>
                                 {product.notes.length > 0 ? (
@@ -788,9 +783,9 @@ const DealDetailModal = ({
                       <div className="text-muted">No hay productos extras registrados.</div>
                     )}
                   </div>
-                </Col>
-              </Row>
-            </div>
+                </Stack>
+              </Col>
+            </Row>
 
             <div>
               <h5 className="mb-3">Calendarización</h5>
