@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import Button from 'react-bootstrap/Button';
 import Container from 'react-bootstrap/Container';
 import Modal from 'react-bootstrap/Modal';
 import Stack from 'react-bootstrap/Stack';
-import CalendarView from './components/calendar/CalendarView';
-import DealsBoard from './components/deals/DealsBoard';
 import DealDetailModal from './components/deals/DealDetailModal';
 import HeaderBar from './components/layout/HeaderBar';
 import { CalendarEvent, loadCalendarEvents, persistCalendarEvents } from './services/calendar';
 import { fetchDealById, DealRecord } from './services/deals';
 import './App.scss';
+
+const CalendarView = lazy(() => import('./components/calendar/CalendarView'));
+const DealsBoard = lazy(() => import('./components/deals/DealsBoard'));
 
 type TabKey = 'calendar' | 'backlog';
 
@@ -125,11 +126,19 @@ const App = () => {
       <main className="app-main">
         <Container fluid className="pt-4 pb-5">
           <Stack gap={4}>
-            {activeTab === 'calendar' ? (
-              <CalendarView events={calendarEvents} onSelectEvent={handleCalendarEventSelect} />
-            ) : (
-              <DealsBoard events={calendarEvents} onUpdateSchedule={handleUpdateSchedule} />
-            )}
+            <Suspense
+              fallback={
+                <div className="py-5 text-center text-muted">
+                  Cargando {activeTab === 'calendar' ? 'calendario' : 'tablero'}...
+                </div>
+              }
+            >
+              {activeTab === 'calendar' ? (
+                <CalendarView events={calendarEvents} onSelectEvent={handleCalendarEventSelect} />
+              ) : (
+                <DealsBoard events={calendarEvents} onUpdateSchedule={handleUpdateSchedule} />
+              )}
+            </Suspense>
           </Stack>
         </Container>
       </main>
