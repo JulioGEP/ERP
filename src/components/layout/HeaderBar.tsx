@@ -1,7 +1,6 @@
 import Container from 'react-bootstrap/Container';
 import Nav from 'react-bootstrap/Nav';
 import Navbar from 'react-bootstrap/Navbar';
-import Badge from 'react-bootstrap/Badge';
 import logo from '../../styles/GEP-Group_Logotipo_horizontal.png';
 
 interface HeaderBarProps {
@@ -17,11 +16,6 @@ const HeaderBar = ({ activeKey, onNavigate }: HeaderBarProps) => (
           <img src={logo} alt="GEP Group" height={40} />
           <span>GEP Group · Planificación</span>
         </Navbar.Brand>
-        <div className="d-none d-lg-block">
-          <Badge pill className="app-header-badge text-uppercase tracking-wide">
-            Primera iteración
-          </Badge>
-        </div>
       </Container>
     </Navbar>
     <div className="app-header-nav">

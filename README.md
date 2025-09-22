@@ -1,6 +1,6 @@
 # GEP Group · Planificación
 
-Primera iteración del ERP interno enfocado en la planificación de formaciones. Incluye la estructura base del frontend en React + TypeScript con Vite, estilos iniciales alineados con el branding de GEP Group, un calendario FullCalendar vacío y la vista de "Presupuestos sin fecha" alimentada desde Pipedrive a través de una función serverless de Netlify.
+ERP interno enfocado en la planificación de formaciones. Incluye la estructura base del frontend en React + TypeScript con Vite, estilos iniciales alineados con el branding de GEP Group, un calendario FullCalendar vacío y la vista de "Presupuestos sin fecha" alimentada desde Pipedrive a través de una función serverless de Netlify.
 
 ## Tecnologías principales
 
