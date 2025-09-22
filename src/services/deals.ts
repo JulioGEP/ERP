@@ -97,3 +97,218 @@ export const fetchDealById = async (dealId: number): Promise<DealRecord> => {
 
   return payload.deal;
 };
+
+const MANUAL_DEALS_STORAGE_KEY = 'erp-manual-deals-v1';
+const isBrowser = typeof window !== 'undefined';
+
+const parseString = (value: unknown, fallback = ''): string =>
+  typeof value === 'string' ? value : fallback;
+
+const parseOptionalString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const parseNumber = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const parseOptionalNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const parseStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .filter((item) => item.length > 0)
+    )
+  );
+};
+
+const parseDealNotes = (value: unknown): DealNote[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+
+      const candidate = item as Partial<DealNote> & { source?: unknown };
+      const source = candidate.source;
+      const validSource =
+        source === 'deal' || source === 'product' || source === 'local' ? source : 'deal';
+
+      return {
+        id: parseString(candidate.id),
+        content: parseString(candidate.content),
+        createdAt: parseOptionalString(candidate.createdAt),
+        authorName: parseOptionalString(candidate.authorName),
+        source: validSource,
+        productId: parseOptionalNumber(candidate.productId),
+        dealProductId: parseOptionalNumber(candidate.dealProductId)
+      } satisfies DealNote;
+    })
+    .filter((note): note is DealNote => note !== null);
+};
+
+const parseDealAttachments = (value: unknown): DealAttachment[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+
+      const candidate = item as Partial<DealAttachment>;
+
+      return {
+        id: parseString(candidate.id),
+        name: parseString(candidate.name),
+        url: parseString(candidate.url),
+        downloadUrl: parseOptionalString(candidate.downloadUrl),
+        fileType: parseOptionalString(candidate.fileType),
+        addedAt: parseOptionalString(candidate.addedAt),
+        addedBy: parseOptionalString(candidate.addedBy),
+        source:
+          candidate.source === 'deal' || candidate.source === 'product' || candidate.source === 'local'
+            ? candidate.source
+            : 'deal',
+        productId: parseOptionalNumber(candidate.productId),
+        dealProductId: parseOptionalNumber(candidate.dealProductId)
+      } satisfies DealAttachment;
+    })
+    .filter((attachment): attachment is DealAttachment => attachment !== null);
+};
+
+const parseDealProducts = (value: unknown): DealProduct[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+
+      const candidate = item as Partial<DealProduct> & { isTraining?: unknown };
+
+      return {
+        dealProductId: parseNumber(candidate.dealProductId, 0),
+        productId: parseOptionalNumber(candidate.productId),
+        name: parseString(candidate.name),
+        code: parseOptionalString(candidate.code),
+        quantity: parseNumber(candidate.quantity, 0),
+        itemPrice: parseOptionalNumber(candidate.itemPrice),
+        recommendedHours: parseOptionalNumber(candidate.recommendedHours),
+        recommendedHoursRaw: parseOptionalString(candidate.recommendedHoursRaw),
+        notes: parseDealNotes(candidate.notes),
+        attachments: parseDealAttachments(candidate.attachments),
+        isTraining: candidate.isTraining === true
+      } satisfies DealProduct;
+    })
+    .filter((product): product is DealProduct => product !== null);
+};
+
+const sanitizeDealRecord = (value: unknown): DealRecord | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<DealRecord>;
+  const identifier = parseNumber(candidate.id, Number.NaN);
+
+  if (!Number.isFinite(identifier)) {
+    return null;
+  }
+
+  return {
+    id: identifier,
+    title: parseString(candidate.title),
+    clientId: parseOptionalNumber(candidate.clientId),
+    clientName: parseOptionalString(candidate.clientName),
+    sede: parseOptionalString(candidate.sede),
+    address: parseOptionalString(candidate.address),
+    pipelineId: parseOptionalNumber(candidate.pipelineId),
+    pipelineName: parseOptionalString(candidate.pipelineName),
+    wonDate: parseOptionalString(candidate.wonDate),
+    formations: parseStringArray(candidate.formations),
+    trainingProducts: parseDealProducts(candidate.trainingProducts),
+    extraProducts: parseDealProducts(candidate.extraProducts),
+    notes: parseDealNotes(candidate.notes),
+    attachments: parseDealAttachments(candidate.attachments)
+  } satisfies DealRecord;
+};
+
+const dedupeDeals = (deals: DealRecord[]): DealRecord[] => {
+  const seen = new Set<number>();
+  const result: DealRecord[] = [];
+
+  deals.forEach((deal) => {
+    if (!seen.has(deal.id)) {
+      seen.add(deal.id);
+      result.push(deal);
+    }
+  });
+
+  return result;
+};
+
+export const loadStoredManualDeals = (): DealRecord[] => {
+  if (!isBrowser) {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(MANUAL_DEALS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    const sanitized = parsed
+      .map((value) => sanitizeDealRecord(value))
+      .filter((deal): deal is DealRecord => deal !== null);
+
+    return dedupeDeals(sanitized);
+  } catch (error) {
+    console.error('No se pudieron leer los deals manuales del almacenamiento local', error);
+    return [];
+  }
+};
+
+export const persistStoredManualDeals = (deals: DealRecord[]) => {
+  if (!isBrowser) {
+    return;
+  }
+
+  try {
+    const sanitized = dedupeDeals(
+      deals
+        .map((deal) => sanitizeDealRecord(deal))
+        .filter((deal): deal is DealRecord => deal !== null)
+    );
+
+    window.localStorage.setItem(MANUAL_DEALS_STORAGE_KEY, JSON.stringify(sanitized));
+  } catch (error) {
+    console.error('No se pudieron guardar los deals manuales en el almacenamiento local', error);
+  }
+};
