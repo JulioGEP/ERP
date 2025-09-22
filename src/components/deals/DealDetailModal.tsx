@@ -433,9 +433,9 @@ const DealDetailModal = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [mapVisible, setMapVisible] = useState(false);
-  const [notesExpanded, setNotesExpanded] = useState(true);
-  const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
-  const [extraProductsExpanded, setExtraProductsExpanded] = useState(true);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
+  const [extraProductsExpanded, setExtraProductsExpanded] = useState(false);
 
   const productMap = useMemo(() => {
     const byDealProductId = new Map<number, string>();
@@ -470,9 +470,9 @@ const DealDetailModal = ({
     setShowDocumentUnsavedConfirm(false);
     setSaveFeedback(null);
     setSaveError(null);
-    setNotesExpanded(true);
-    setAttachmentsExpanded(true);
-    setExtraProductsExpanded(true);
+    setNotesExpanded(false);
+    setAttachmentsExpanded(false);
+    setExtraProductsExpanded(false);
   }, [deal.id]);
 
   const isNoteDirty =
