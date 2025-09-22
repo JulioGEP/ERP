@@ -351,6 +351,51 @@ const loadDealFieldOptions = async (): Promise<DealFieldOptions> => {
   return { sede, caes, fundae, hotelPernocta };
 };
 
+const getTrimmedString = (input: unknown): string | null => {
+  if (typeof input !== 'string') {
+    return null;
+  }
+
+  const trimmed = input.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const normaliseBooleanLikeValue = (value: unknown): string | null => {
+  if (typeof value === 'boolean') {
+    return value ? 'SI' : 'NO';
+  }
+
+  if (typeof value === 'number') {
+    if (value === 1) {
+      return 'SI';
+    }
+
+    if (value === 0) {
+      return 'NO';
+    }
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    const normalised = trimmed.toLowerCase();
+
+    if (['1', 'true', 'si', 'sí', 'yes', 'y', 's'].includes(normalised)) {
+      return 'SI';
+    }
+
+    if (['0', 'false', 'no', 'n'].includes(normalised)) {
+      return 'NO';
+    }
+  }
+
+  return null;
+};
+
 const normaliseFieldValue = (value: unknown, options: Map<string, string>): string | null => {
   if (value == null) {
     return null;
@@ -367,9 +412,19 @@ const normaliseFieldValue = (value: unknown, options: Map<string, string>): stri
     return null;
   };
 
-  const directMatch = findByOptionKey(String(value));
-  if (directMatch) {
-    return directMatch;
+  const matchOption = (raw: unknown): string | null => {
+    if (typeof raw === 'string' || typeof raw === 'number') {
+      return findByOptionKey(String(raw));
+    }
+
+    return null;
+  };
+
+  const booleanValue = normaliseBooleanLikeValue(value);
+
+  const optionMatch = matchOption(value);
+  if (optionMatch) {
+    return optionMatch;
   }
 
   if (Array.isArray(value)) {
@@ -387,11 +442,14 @@ const normaliseFieldValue = (value: unknown, options: Map<string, string>): stri
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
 
-    if (typeof record.label === 'string') {
-      const trimmed = record.label.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
+    const label = getTrimmedString(record.label);
+    if (label) {
+      return label;
+    }
+
+    const idMatch = matchOption(record.id);
+    if (idMatch) {
+      return idMatch;
     }
 
     if ('value' in record) {
@@ -401,7 +459,31 @@ const normaliseFieldValue = (value: unknown, options: Map<string, string>): stri
       }
     }
 
-    return null;
+    const addressCandidateKeys = ['formatted_address', 'formattedAddress', 'address', 'text', 'name'];
+    for (const key of addressCandidateKeys) {
+      if (key in record) {
+        const candidate = getTrimmedString(record[key]);
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+
+    const components = [
+      getTrimmedString(record.route),
+      getTrimmedString(record.street),
+      getTrimmedString(record.locality),
+      getTrimmedString(record.city),
+      getTrimmedString(record.province),
+      getTrimmedString(record.state),
+      getTrimmedString(record.country)
+    ].filter((component): component is string => Boolean(component));
+
+    if (components.length > 0) {
+      return Array.from(new Set(components)).join(', ');
+    }
+
+    return booleanValue;
   }
 
   if (typeof value === 'string') {
@@ -425,9 +507,14 @@ const normaliseFieldValue = (value: unknown, options: Map<string, string>): stri
       }
     }
 
-    const fromTrimmed = findByOptionKey(trimmed);
+    const fromTrimmed = matchOption(trimmed);
     if (fromTrimmed) {
       return fromTrimmed;
+    }
+
+    const booleanFromString = normaliseBooleanLikeValue(trimmed);
+    if (booleanFromString) {
+      return booleanFromString;
     }
 
     if (!/^\d+$/.test(trimmed)) {
@@ -437,7 +524,7 @@ const normaliseFieldValue = (value: unknown, options: Map<string, string>): stri
     return null;
   }
 
-  return null;
+  return booleanValue;
 };
 
 const loadPipelineMap = async (): Promise<Map<number, string>> => {
