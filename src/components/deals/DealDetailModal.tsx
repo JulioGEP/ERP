@@ -856,8 +856,8 @@ const DealDetailModal = ({
                         <>
                           <Row className="g-2 align-items-center text-uppercase text-muted small mb-2">
                             <Col md={8} sm={7}>Formación</Col>
-                            <Col md={4} sm={5} className="text-md-end">
-                              <span className="d-inline-block w-100">Horas</span>
+                            <Col md={4} sm={5}>
+                              <span className="d-inline-block w-100 text-start">Horas</span>
                             </Col>
                           </Row>
                           <Stack gap={2}>
@@ -869,19 +869,27 @@ const DealDetailModal = ({
                                   </div>
                                 </Col>
                                 <Col md={4} sm={5}>
-                                  <Form.Group controlId={`recommended-hours-${product.dealProductId}`} className="mb-0">
-                                    <Form.Label className="visually-hidden">Horas</Form.Label>
-                                    <Form.Control
-                                      type="number"
-                                      min={0}
-                                      step={0.5}
-                                      value={recommendedHoursByProduct[product.dealProductId] ?? ''}
-                                      onChange={(event) =>
-                                        handleRecommendedHoursChange(product.dealProductId, event.target.value)
-                                      }
-                                      placeholder="Sin horas"
-                                      aria-label="Horas recomendadas"
-                                    />
+                                  <Form.Group
+                                    controlId={`recommended-hours-${product.dealProductId}`}
+                                    className="mb-0"
+                                  >
+                                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                                      <Form.Label className="mb-0 text-uppercase text-muted small">
+                                        Horas
+                                      </Form.Label>
+                                      <Form.Control
+                                        type="number"
+                                        min={0}
+                                        step={0.5}
+                                        value={recommendedHoursByProduct[product.dealProductId] ?? ''}
+                                        onChange={(event) =>
+                                          handleRecommendedHoursChange(product.dealProductId, event.target.value)
+                                        }
+                                        placeholder="Sin horas"
+                                        aria-label="Horas recomendadas"
+                                        className="w-50"
+                                      />
+                                    </div>
                                   </Form.Group>
                                 </Col>
                               </Row>
