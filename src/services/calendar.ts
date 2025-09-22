@@ -12,7 +12,7 @@ export interface CalendarEvent {
   sede: string | null;
   address: string | null;
   trainers: string[];
-  mobileUnit: string | null;
+  mobileUnits: string[];
   logisticsInfo: string | null;
 }
 
@@ -50,15 +50,33 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
   const parseOptionalNumber = (value: unknown): number | null =>
     typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-  const trainers = Array.isArray(event.trainers)
-    ? Array.from(
-        new Set(
-          event.trainers
-            .map((trainer) => (typeof trainer === 'string' ? trainer.trim() : ''))
-            .filter((trainer) => trainer.length > 0)
-        )
-      )
-    : [];
+  const sanitizeStringArray = (input: unknown): string[] => {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    const filtered = input
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value) => value.length > 0);
+
+    return Array.from(new Set(filtered));
+  };
+
+  const trainers = sanitizeStringArray(event.trainers);
+
+  const storedMobileUnits = sanitizeStringArray((event as { mobileUnits?: unknown }).mobileUnits);
+  let mobileUnits = storedMobileUnits;
+
+  if (mobileUnits.length === 0) {
+    const legacyMobileUnit = (event as { mobileUnit?: unknown }).mobileUnit;
+
+    if (typeof legacyMobileUnit === 'string') {
+      const trimmed = legacyMobileUnit.trim();
+      if (trimmed.length > 0) {
+        mobileUnits = [trimmed];
+      }
+    }
+  }
 
   return {
     id: event.id,
@@ -74,7 +92,7 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     sede: parseOptionalString(event.sede),
     address: parseOptionalString(event.address),
     trainers,
-    mobileUnit: parseOptionalString(event.mobileUnit),
+    mobileUnits,
     logisticsInfo: parseOptionalString(event.logisticsInfo)
   };
 };

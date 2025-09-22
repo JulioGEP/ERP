@@ -22,8 +22,9 @@ const buildEventTitle = (event: CalendarEvent) => {
     segments.push(event.sede);
   }
 
-  if (event.mobileUnit) {
-    segments.push(`Unidad: ${event.mobileUnit}`);
+  if (event.mobileUnits && event.mobileUnits.length > 0) {
+    const label = event.mobileUnits.length === 1 ? 'Unidad' : 'Unidades';
+    segments.push(`${label}: ${event.mobileUnits.join(', ')}`);
   }
 
   if (event.trainers && event.trainers.length > 0) {
@@ -71,7 +72,7 @@ const CalendarView = ({ events }: CalendarViewProps) => (
               sede: event.sede,
               address: event.address,
               trainers: event.trainers,
-              mobileUnit: event.mobileUnit,
+              mobileUnits: event.mobileUnits,
               logisticsInfo: event.logisticsInfo
             }
           }))}
