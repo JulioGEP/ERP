@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
 import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
 import Card from 'react-bootstrap/Card';
+import Form from 'react-bootstrap/Form';
 import Placeholder from 'react-bootstrap/Placeholder';
+import Pagination from 'react-bootstrap/Pagination';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
 import { CalendarEvent } from '../../services/calendar';
@@ -41,6 +43,9 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ field: 'wonDate', direction: 'desc' });
+  const pageSizeOptions = [25, 50, 75, 100];
+  const [pageSize, setPageSize] = useState<number>(pageSizeOptions[0]);
+  const [currentPage, setCurrentPage] = useState(1);
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['deals', 'stage-3'],
     queryFn: fetchDeals,
@@ -139,6 +144,23 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     return items;
   }, [data, sortConfig, fallbackClientName, fallbackFormationsLabel, fallbackSede]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [pageSize, sortedDeals]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedDeals.length / pageSize));
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  const paginatedDeals = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return sortedDeals.slice(startIndex, startIndex + pageSize);
+  }, [sortedDeals, currentPage, pageSize]);
+
+  const pageNumbers = useMemo(() => Array.from({ length: totalPages }, (_, index) => index + 1), [totalPages]);
+
   const handleSort = (field: SortField) => {
     setSortConfig((current) => {
       if (current.field === field) {
@@ -235,6 +257,19 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     setSelectedDealId(dealId);
   };
 
+  const handlePageChange = (page: number) => {
+    const clamped = Math.min(Math.max(page, 1), totalPages);
+    setCurrentPage(clamped);
+  };
+
+  const handlePageSizeChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const newSize = Number.parseInt(event.target.value, 10);
+
+    if (Number.isFinite(newSize)) {
+      setPageSize(newSize);
+    }
+  };
+
   const handleCloseModal = () => {
     setSelectedDealId(null);
   };
@@ -308,8 +343,8 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
               <tbody>
                 {isLoading && skeletonRows}
 
-                {!isLoading && sortedDeals.length > 0 &&
-                  sortedDeals.map((deal) => (
+                {!isLoading && paginatedDeals.length > 0 &&
+                  paginatedDeals.map((deal) => (
                     <tr
                       key={deal.id}
                       role="button"
@@ -344,6 +379,62 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
             <div className="text-center py-5 text-secondary">
               <p className="fw-semibold">No hay presupuestos en el embudo seleccionado.</p>
               <p className="mb-0">En cuanto un presupuesto se marque como ganado en Pipedrive, aparecerá automáticamente aquí.</p>
+            </div>
+          )}
+
+          {!isLoading && sortedDeals.length > 0 && (
+            <div className="d-flex justify-content-end align-items-center flex-wrap gap-3 mt-4">
+              <Pagination className="mb-0">
+                <Pagination.Item
+                  aria-label="Primera página"
+                  disabled={currentPage === 1}
+                  onClick={() => handlePageChange(1)}
+                >
+                  {'<<'}
+                </Pagination.Item>
+                <Pagination.Item
+                  aria-label="Página anterior"
+                  disabled={currentPage === 1}
+                  onClick={() => handlePageChange(currentPage - 1)}
+                >
+                  {'<'}
+                </Pagination.Item>
+                {pageNumbers.map((pageNumber) => (
+                  <Pagination.Item
+                    key={pageNumber}
+                    active={pageNumber === currentPage}
+                    aria-label={`Ir a la página ${pageNumber}`}
+                    onClick={() => handlePageChange(pageNumber)}
+                  >
+                    {pageNumber}
+                  </Pagination.Item>
+                ))}
+                <Pagination.Item
+                  aria-label="Página siguiente"
+                  disabled={currentPage === totalPages || pageNumbers.length === 0}
+                  onClick={() => handlePageChange(currentPage + 1)}
+                >
+                  {'>'}
+                </Pagination.Item>
+                <Pagination.Item
+                  aria-label="Última página"
+                  disabled={currentPage === totalPages || pageNumbers.length === 0}
+                  onClick={() => handlePageChange(totalPages)}
+                >
+                  {'>>'}
+                </Pagination.Item>
+              </Pagination>
+
+              <Form.Group controlId="dealsPageSize" className="d-flex align-items-center gap-2 mb-0">
+                <Form.Label className="mb-0 text-nowrap">Presupuestos por página</Form.Label>
+                <Form.Select value={pageSize} onChange={handlePageSizeChange} className="w-auto">
+                  {pageSizeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
             </div>
           )}
         </Card.Body>
