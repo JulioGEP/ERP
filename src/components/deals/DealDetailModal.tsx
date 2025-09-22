@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
 import Button from 'react-bootstrap/Button';
 import Col from 'react-bootstrap/Col';
@@ -393,11 +393,13 @@ const DealDetailModal = ({
   const [noteText, setNoteText] = useState('');
   const [noteTarget, setNoteTarget] = useState('general');
   const [noteError, setNoteError] = useState<string | null>(null);
+  const [showNoteUnsavedConfirm, setShowNoteUnsavedConfirm] = useState(false);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [documentName, setDocumentName] = useState('');
   const [documentUrl, setDocumentUrl] = useState('');
   const [documentTarget, setDocumentTarget] = useState('general');
   const [documentError, setDocumentError] = useState<string | null>(null);
+  const [showDocumentUnsavedConfirm, setShowDocumentUnsavedConfirm] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -426,9 +428,52 @@ const DealDetailModal = ({
     setDocumentUrl('');
     setNoteTarget('general');
     setDocumentTarget('general');
+    setNoteError(null);
+    setDocumentError(null);
+    setShowNoteUnsavedConfirm(false);
+    setShowDocumentUnsavedConfirm(false);
     setSaveFeedback(null);
     setSaveError(null);
   }, [deal.id]);
+
+  const isNoteDirty = noteText !== '' || noteTarget !== 'general';
+  const isDocumentDirty =
+    documentName !== '' || documentUrl !== '' || documentTarget !== 'general';
+
+  const closeNoteModal = useCallback(() => {
+    setShowNoteModal(false);
+    setShowNoteUnsavedConfirm(false);
+    setNoteText('');
+    setNoteTarget('general');
+    setNoteError(null);
+  }, []);
+
+  const closeDocumentModal = useCallback(() => {
+    setShowDocumentModal(false);
+    setShowDocumentUnsavedConfirm(false);
+    setDocumentName('');
+    setDocumentUrl('');
+    setDocumentTarget('general');
+    setDocumentError(null);
+  }, []);
+
+  const handleNoteModalClose = useCallback(() => {
+    if (isNoteDirty) {
+      setShowNoteUnsavedConfirm(true);
+      return;
+    }
+
+    closeNoteModal();
+  }, [closeNoteModal, isNoteDirty]);
+
+  const handleDocumentModalClose = useCallback(() => {
+    if (isDocumentDirty) {
+      setShowDocumentUnsavedConfirm(true);
+      return;
+    }
+
+    closeDocumentModal();
+  }, [closeDocumentModal, isDocumentDirty]);
 
   const eventsByKey = useMemo(() => {
     const map = new Map<string, CalendarEvent>();
@@ -825,12 +870,12 @@ const DealDetailModal = ({
     }));
   }, [deal.extraProducts, deal.trainingProducts]);
 
-  const handleAddNote = () => {
+  const handleAddNote = (): boolean => {
     const trimmed = noteText.trim();
 
     if (!trimmed) {
       setNoteError('La nota no puede estar vacía.');
-      return;
+      return false;
     }
 
     const now = new Date().toISOString();
@@ -860,19 +905,17 @@ const DealDetailModal = ({
     const updatedNotes = [...localNotes, note];
     setLocalNotes(updatedNotes);
     persistExtras(updatedNotes, localDocuments);
-    setShowNoteModal(false);
-    setNoteText('');
-    setNoteTarget('general');
-    setNoteError(null);
+    closeNoteModal();
+    return true;
   };
 
-  const handleAddDocument = () => {
+  const handleAddDocument = (): boolean => {
     const trimmedName = documentName.trim();
     const trimmedUrl = documentUrl.trim();
 
     if (!trimmedName) {
       setDocumentError('Introduce un nombre para el documento.');
-      return;
+      return false;
     }
 
     try {
@@ -882,7 +925,7 @@ const DealDetailModal = ({
       }
     } catch (error) {
       setDocumentError('Introduce una URL válida.');
-      return;
+      return false;
     }
 
     const now = new Date().toISOString();
@@ -913,11 +956,38 @@ const DealDetailModal = ({
     const updatedDocuments = [...localDocuments, document];
     setLocalDocuments(updatedDocuments);
     persistExtras(localNotes, updatedDocuments);
-    setShowDocumentModal(false);
-    setDocumentName('');
-    setDocumentUrl('');
-    setDocumentTarget('general');
-    setDocumentError(null);
+    closeDocumentModal();
+    return true;
+  };
+
+  const handleConfirmNoteDiscard = () => {
+    closeNoteModal();
+  };
+
+  const handleConfirmNoteSave = () => {
+    const saved = handleAddNote();
+    if (!saved) {
+      setShowNoteUnsavedConfirm(false);
+    }
+  };
+
+  const handleKeepEditingNote = () => {
+    setShowNoteUnsavedConfirm(false);
+  };
+
+  const handleConfirmDocumentDiscard = () => {
+    closeDocumentModal();
+  };
+
+  const handleConfirmDocumentSave = () => {
+    const saved = handleAddDocument();
+    if (!saved) {
+      setShowDocumentUnsavedConfirm(false);
+    }
+  };
+
+  const handleKeepEditingDocument = () => {
+    setShowDocumentUnsavedConfirm(false);
   };
 
   const handleRefresh = async () => {
@@ -1567,7 +1637,7 @@ const DealDetailModal = ({
         </Modal.Footer>
       </Modal>
 
-      <Modal show={showNoteModal} onHide={() => setShowNoteModal(false)} centered>
+      <Modal show={showNoteModal} onHide={handleNoteModalClose} centered>
         <Modal.Header closeButton>
           <Modal.Title>Añadir nota</Modal.Title>
         </Modal.Header>
@@ -1602,7 +1672,7 @@ const DealDetailModal = ({
           </Stack>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowNoteModal(false)}>
+          <Button variant="secondary" onClick={handleNoteModalClose}>
             Cancelar
           </Button>
           <Button variant="primary" onClick={handleAddNote}>
@@ -1611,7 +1681,27 @@ const DealDetailModal = ({
         </Modal.Footer>
       </Modal>
 
-      <Modal show={showDocumentModal} onHide={() => setShowDocumentModal(false)} centered>
+      <Modal show={showNoteUnsavedConfirm} onHide={handleKeepEditingNote} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Cambios sin guardar</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          Has realizado cambios que no se han guardado. ¿Quieres guardarlos antes de cerrar?
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleKeepEditingNote}>
+            Seguir editando
+          </Button>
+          <Button variant="outline-danger" onClick={handleConfirmNoteDiscard}>
+            Cerrar sin guardar
+          </Button>
+          <Button variant="primary" onClick={handleConfirmNoteSave}>
+            Guardar y cerrar
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal show={showDocumentModal} onHide={handleDocumentModalClose} centered>
         <Modal.Header closeButton>
           <Modal.Title>Añadir documento</Modal.Title>
         </Modal.Header>
@@ -1654,11 +1744,31 @@ const DealDetailModal = ({
           </Stack>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowDocumentModal(false)}>
+          <Button variant="secondary" onClick={handleDocumentModalClose}>
             Cancelar
           </Button>
           <Button variant="primary" onClick={handleAddDocument}>
             Guardar documento
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal show={showDocumentUnsavedConfirm} onHide={handleKeepEditingDocument} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Cambios sin guardar</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          Has realizado cambios que no se han guardado. ¿Quieres guardarlos antes de cerrar?
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleKeepEditingDocument}>
+            Seguir editando
+          </Button>
+          <Button variant="outline-danger" onClick={handleConfirmDocumentDiscard}>
+            Cerrar sin guardar
+          </Button>
+          <Button variant="primary" onClick={handleConfirmDocumentSave}>
+            Guardar y cerrar
           </Button>
         </Modal.Footer>
       </Modal>
