@@ -46,8 +46,9 @@ interface SessionFormEntry {
   logisticsInfo: string;
 }
 
-type DisplayNote = DealNote;
+type DisplayNote = DealNote & { shareWithTrainer?: boolean | null };
 type DisplayAttachment = DealAttachment;
+type ShareWithTrainerOption = 'yes' | 'no';
 
 const generateId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -391,7 +392,7 @@ const DealDetailModal = ({
   const [localDocuments, setLocalDocuments] = useState<StoredDealDocument[]>([]);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [noteText, setNoteText] = useState('');
-  const [noteTarget, setNoteTarget] = useState('general');
+  const [shareWithTrainer, setShareWithTrainer] = useState<ShareWithTrainerOption>('no');
   const [noteError, setNoteError] = useState<string | null>(null);
   const [showNoteUnsavedConfirm, setShowNoteUnsavedConfirm] = useState(false);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
@@ -426,7 +427,7 @@ const DealDetailModal = ({
     setNoteText('');
     setDocumentName('');
     setDocumentUrl('');
-    setNoteTarget('general');
+    setShareWithTrainer('no');
     setDocumentTarget('general');
     setNoteError(null);
     setDocumentError(null);
@@ -436,7 +437,7 @@ const DealDetailModal = ({
     setSaveError(null);
   }, [deal.id]);
 
-  const isNoteDirty = noteText !== '' || noteTarget !== 'general';
+  const isNoteDirty = noteText !== '' || shareWithTrainer !== 'no';
   const isDocumentDirty =
     documentName !== '' || documentUrl !== '' || documentTarget !== 'general';
 
@@ -444,7 +445,7 @@ const DealDetailModal = ({
     setShowNoteModal(false);
     setShowNoteUnsavedConfirm(false);
     setNoteText('');
-    setNoteTarget('general');
+    setShareWithTrainer('no');
     setNoteError(null);
   }, []);
 
@@ -594,7 +595,8 @@ const DealDetailModal = ({
         authorName: 'Equipo de planificación',
         source: 'local',
         productId: note.productId ?? null,
-        dealProductId: note.dealProductId ?? null
+        dealProductId: note.dealProductId ?? null,
+        shareWithTrainer: note.shareWithTrainer ?? null
       })),
     [localNotes]
   );
@@ -879,27 +881,12 @@ const DealDetailModal = ({
     }
 
     const now = new Date().toISOString();
-    let dealProductId: number | undefined;
-    let productId: number | undefined;
-    let productName: string | undefined;
-
-    if (noteTarget.startsWith('product-')) {
-      const identifier = Number.parseInt(noteTarget.replace('product-', ''), 10);
-      const matched = productOptions.find((option) => option.dealProductId === identifier);
-      if (matched) {
-        dealProductId = matched.dealProductId;
-        productId = matched.productId ?? undefined;
-        productName = matched.label;
-      }
-    }
 
     const note: StoredDealNote = {
       id: generateId(),
       content: trimmed,
       createdAt: now,
-      dealProductId,
-      productId,
-      productName
+      shareWithTrainer: shareWithTrainer === 'yes'
     };
 
     const updatedNotes = [...localNotes, note];
@@ -1228,6 +1215,11 @@ const DealDetailModal = ({
                               <div className="fw-semibold mb-1">{note.content || 'Sin contenido'}</div>
                               <div className="small text-muted d-flex flex-wrap gap-3">
                                 <span>{renderNoteOrigin(note)}</span>
+                                {typeof note.shareWithTrainer === 'boolean' ? (
+                                  <span>
+                                    Compartir con formador: {note.shareWithTrainer ? 'Sí' : 'No'}
+                                  </span>
+                                ) : null}
                                 {note.authorName ? <span>Autor: {note.authorName}</span> : null}
                                 {note.createdAt ? <span>{formatDateLabel(note.createdAt)}</span> : null}
                               </div>
@@ -1658,15 +1650,16 @@ const DealDetailModal = ({
                 placeholder="Añade aquí la nota para el equipo de planificación"
               />
             </Form.Group>
-            <Form.Group controlId="note-target">
-              <Form.Label>Asociar a</Form.Label>
-              <Form.Select value={noteTarget} onChange={(event) => setNoteTarget(event.target.value)}>
-                <option value="general">General</option>
-                {productOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+            <Form.Group controlId="note-share-with-trainer">
+              <Form.Label>Compartir con Formador?</Form.Label>
+              <Form.Select
+                value={shareWithTrainer}
+                onChange={(event) =>
+                  setShareWithTrainer(event.target.value as ShareWithTrainerOption)
+                }
+              >
+                <option value="no">No</option>
+                <option value="yes">Sí</option>
               </Form.Select>
             </Form.Group>
           </Stack>

@@ -5,6 +5,7 @@ export interface StoredDealNote {
   dealProductId?: number | null;
   productId?: number | null;
   productName?: string | null;
+  shareWithTrainer?: boolean | null;
 }
 
 export interface StoredDealDocument {
