@@ -416,7 +416,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
 
   const handleRemoveDeal = (dealId: number) => {
     const confirmed = window.confirm(
-      '¿Quieres eliminar este deal de la lista de "Sin fecha"? Podrás recuperarlo subiéndolo de nuevo.'
+      '¿Quieres eliminar este deal de la lista de "Presupuestos"? Podrás recuperarlo subiéndolo de nuevo.'
     );
 
     if (!confirmed) {

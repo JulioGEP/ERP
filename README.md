@@ -1,6 +1,6 @@
 # GEP Group · Planificación
 
-ERP interno enfocado en la planificación de formaciones. Incluye la estructura base del frontend en React + TypeScript con Vite, estilos iniciales alineados con el branding de GEP Group, un calendario FullCalendar vacío y la vista de "Presupuestos sin fecha" alimentada desde Pipedrive a través de una función serverless de Netlify.
+ERP interno enfocado en la planificación de formaciones. Incluye la estructura base del frontend en React + TypeScript con Vite, estilos iniciales alineados con el branding de GEP Group, un calendario FullCalendar vacío y la vista de "Presupuestos" alimentada desde Pipedrive a través de una función serverless de Netlify.
 
 ## Tecnologías principales
 
@@ -44,7 +44,7 @@ La configuración recomendada de Netlify es:
 ## Próximos pasos sugeridos
 
 - Sincronizar eventos reales en el calendario a partir de las fechas planificadas.
-- Permitir que los usuarios asignen fechas desde la vista de "Sin fecha" y reflejarlo en Pipedrive.
+- Permitir que los usuarios asignen fechas desde la vista de "Presupuestos" y reflejarlo en Pipedrive.
 - Añadir filtros y búsqueda avanzada por cliente, sede o tipo de formación.
 - Integrar progresivamente las APIs de Holded y WooCommerce.
 - Incorporar la carga y gestión de documentación mediante Google Workspace.
