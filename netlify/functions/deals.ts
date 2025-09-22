@@ -101,6 +101,7 @@ interface NormalisedDeal {
   address: string | null;
   pipelineId: number | null;
   pipelineName: string | null;
+  wonDate: string | null;
   formations: string[];
   trainingProducts: NormalisedProduct[];
   extraProducts: NormalisedProduct[];
@@ -196,6 +197,15 @@ const parseAuthorName = (value: unknown): string | null => {
   }
 
   return null;
+};
+
+const parseDateValue = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 };
 
 const normaliseNote = (
@@ -584,6 +594,7 @@ const normaliseDeal = async (
 
   const pipelineId = toInteger(deal.pipeline_id);
   const pipelineName = pipelineId != null ? pipelineMap.get(pipelineId) ?? null : null;
+  const wonDate = parseDateValue((deal as Record<string, unknown>).won_time);
 
   const [products, dealNotes, dealFiles] = await Promise.all([
     fetchDealProductsDetailed(deal.id, caches),
@@ -622,6 +633,7 @@ const normaliseDeal = async (
     address,
     pipelineId,
     pipelineName,
+    wonDate,
     formations,
     trainingProducts,
     extraProducts,

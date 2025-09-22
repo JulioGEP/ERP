@@ -75,6 +75,33 @@
   font-size: 0.95rem;
 }
 
+.table-sort-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.table-sort-button:hover {
+  color: var(--brand-primary);
+}
+
+.table-sort-button:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+.table-sort-indicator {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
 @media (max-width: 768px) {
   .calendar-card,
   .deals-card {
