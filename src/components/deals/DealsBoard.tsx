@@ -906,6 +906,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
               console.error('No se pudo actualizar el deal seleccionado', refreshError);
             }
           }}
+          isLoading={false}
         />
       )}
     </>
