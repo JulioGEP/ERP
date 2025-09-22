@@ -8,7 +8,13 @@ import Placeholder from 'react-bootstrap/Placeholder';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
 import { CalendarEvent } from '../../services/calendar';
-import { fetchDealById, fetchDeals, DealRecord } from '../../services/deals';
+import {
+  fetchDealById,
+  fetchDeals,
+  DealRecord,
+  loadStoredManualDeals,
+  persistStoredManualDeals
+} from '../../services/deals';
 import DealDetailModal from './DealDetailModal';
 
 const skeletonColumnCount = 6;
@@ -41,7 +47,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ field: 'wonDate', direction: 'desc' });
-  const [manualDeals, setManualDeals] = useState<DealRecord[]>([]);
+  const [manualDeals, setManualDeals] = useState<DealRecord[]>(() => loadStoredManualDeals());
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['deals', 'stage-3'],
     queryFn: fetchDeals,
@@ -57,6 +63,10 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
       previous.filter((manualDeal) => !data.some((dealItem) => dealItem.id === manualDeal.id))
     );
   }, [data]);
+
+  useEffect(() => {
+    persistStoredManualDeals(manualDeals);
+  }, [manualDeals]);
 
   const registerManualDeal = useCallback((deal: DealRecord) => {
     setManualDeals((previous) => {
