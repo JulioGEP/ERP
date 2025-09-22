@@ -155,16 +155,160 @@ const sanitizeSelectionList = (values: string[]): string[] =>
 
 const normalizeSelectionValue = (value: string): string => value.trim();
 
+const getDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toValidDate = (input: string | null | undefined): Date | null => {
+  if (!input) {
+    return null;
+  }
+
+  const candidate = new Date(input);
+  if (Number.isNaN(candidate.getTime())) {
+    return null;
+  }
+
+  return candidate;
+};
+
+const computeDateKeysInRange = (
+  startInput: string | null | undefined,
+  endInput: string | null | undefined
+): string[] => {
+  const startDate = toValidDate(startInput);
+
+  if (!startDate) {
+    return [];
+  }
+
+  const endDate = toValidDate(endInput);
+  const effectiveEnd = endDate && endDate.getTime() >= startDate.getTime() ? endDate : startDate;
+
+  const startDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const endDay = new Date(effectiveEnd.getFullYear(), effectiveEnd.getMonth(), effectiveEnd.getDate());
+
+  const keys: string[] = [];
+  for (let current = new Date(startDay); current.getTime() <= endDay.getTime(); current.setDate(current.getDate() + 1)) {
+    keys.push(getDateKey(current));
+  }
+
+  return keys;
+};
+
+interface BlockedSelectionSets {
+  trainers: Set<string>;
+  mobileUnits: Set<string>;
+}
+
+const createEmptyBlockedSelectionSets = (): BlockedSelectionSets => ({
+  trainers: new Set<string>(),
+  mobileUnits: new Set<string>()
+});
+
+const addBlockedValues = (values: string[], target: Set<string>) => {
+  sanitizeSelectionList(values).forEach((value) => {
+    const normalized = normalizeSelectionValue(value);
+    if (normalized.length > 0) {
+      target.add(normalized);
+    }
+  });
+};
+
+const computeBlockedSelectionSetsForSession = (
+  session: SessionFormEntry,
+  allSessions: SessionFormEntry[],
+  events: CalendarEvent[],
+  dealId: number
+): BlockedSelectionSets => {
+  const blocked = createEmptyBlockedSelectionSets();
+  const sessionDateKeys = computeDateKeysInRange(session.start, session.end);
+
+  if (sessionDateKeys.length === 0) {
+    return blocked;
+  }
+
+  const sessionDateKeySet = new Set(sessionDateKeys);
+
+  events.forEach((event) => {
+    const eventDateKeys = computeDateKeysInRange(event.start, event.end);
+    if (eventDateKeys.length === 0) {
+      return;
+    }
+
+    const hasIntersection = eventDateKeys.some((dateKey) => sessionDateKeySet.has(dateKey));
+    if (!hasIntersection) {
+      return;
+    }
+
+    const isSameSession =
+      event.dealId === dealId &&
+      event.dealProductId === session.dealProductId &&
+      event.sessionIndex === session.sessionIndex;
+
+    if (isSameSession) {
+      return;
+    }
+
+    addBlockedValues(event.trainers, blocked.trainers);
+    addBlockedValues(event.mobileUnits, blocked.mobileUnits);
+  });
+
+  allSessions.forEach((otherSession) => {
+    if (otherSession.key === session.key) {
+      return;
+    }
+
+    const otherDateKeys = computeDateKeysInRange(otherSession.start, otherSession.end);
+    if (otherDateKeys.length === 0) {
+      return;
+    }
+
+    const hasIntersection = otherDateKeys.some((dateKey) => sessionDateKeySet.has(dateKey));
+    if (!hasIntersection) {
+      return;
+    }
+
+    addBlockedValues(otherSession.trainers, blocked.trainers);
+    addBlockedValues(otherSession.mobileUnits, blocked.mobileUnits);
+  });
+
+  return blocked;
+};
+
+const computeBlockedSelectionsBySession = (
+  sessions: SessionFormEntry[],
+  events: CalendarEvent[],
+  dealId: number
+) => {
+  const map = new Map<string, BlockedSelectionSets>();
+
+  sessions.forEach((session) => {
+    map.set(session.key, computeBlockedSelectionSetsForSession(session, sessions, events, dealId));
+  });
+
+  return map;
+};
+
 const computeAvailableSelectionOptions = (
   options: string[],
   values: string[],
-  currentIndex: number
+  currentIndex: number,
+  blockedValues: Set<string> = new Set()
 ) => {
   return options.filter((option) => {
     const normalizedOption = normalizeSelectionValue(option);
     const currentValue = normalizeSelectionValue(values[currentIndex]);
+    const isCurrentValue = currentValue === normalizedOption;
 
-    if (currentValue === normalizedOption) {
+    if (!isCurrentValue && blockedValues.has(normalizedOption)) {
+      return false;
+    }
+
+    if (isCurrentValue) {
       return true;
     }
 
@@ -178,15 +322,25 @@ const computeAvailableSelectionOptions = (
   });
 };
 
-const hasAvailableSelectionOption = (options: string[], values: string[]) => {
-  const normalizedOptions = new Set(options.map((option) => normalizeSelectionValue(option)));
+const hasAvailableSelectionOption = (
+  options: string[],
+  values: string[],
+  blockedValues: Set<string> = new Set()
+) => {
+  const normalizedOptions = options.map((option) => normalizeSelectionValue(option));
   const usedValues = new Set(
     values
       .map((value) => normalizeSelectionValue(value))
-      .filter((value) => value.length > 0 && normalizedOptions.has(value))
+      .filter((value) => value.length > 0 && normalizedOptions.includes(value))
   );
 
-  return usedValues.size < normalizedOptions.size;
+  return normalizedOptions.some((option) => {
+    if (blockedValues.has(option) && !usedValues.has(option)) {
+      return false;
+    }
+
+    return !usedValues.has(option);
+  });
 };
 
 const extractStoredSelectionList = (input: unknown): string[] => {
@@ -329,6 +483,11 @@ const DealDetailModal = ({
   }, [deal.address, deal.sede, deal.trainingProducts, eventsByKey]);
 
   const [sessions, setSessions] = useState<SessionFormEntry[]>(initialSessions);
+
+  const blockedSelectionsBySession = useMemo(
+    () => computeBlockedSelectionsBySession(sessions, events, deal.id),
+    [sessions, events, deal.id]
+  );
 
   const initialRecommendedHoursByProduct = useMemo(() => {
     const entries = deal.trainingProducts.map((product) => [
@@ -536,16 +695,23 @@ const DealDetailModal = ({
   };
 
   const handleAddSessionTrainer = (key: string) => {
-    updateSessionByKey(key, (session) => {
-      if (!hasAvailableSelectionOption(sessionTrainerOptions, session.trainers)) {
-        return session;
-      }
+    setSessions((previous) =>
+      previous.map((session) => {
+        if (session.key !== key) {
+          return session;
+        }
 
-      return {
-        ...session,
-        trainers: appendSelectionSlot(session.trainers)
-      };
-    });
+        const blocked = computeBlockedSelectionSetsForSession(session, previous, events, deal.id);
+        if (!hasAvailableSelectionOption(sessionTrainerOptions, session.trainers, blocked.trainers)) {
+          return session;
+        }
+
+        return {
+          ...session,
+          trainers: appendSelectionSlot(session.trainers)
+        } satisfies SessionFormEntry;
+      })
+    );
   };
 
   const handleRemoveSessionTrainer = (key: string, index: number) => {
@@ -563,16 +729,23 @@ const DealDetailModal = ({
   };
 
   const handleAddSessionMobileUnit = (key: string) => {
-    updateSessionByKey(key, (session) => {
-      if (!hasAvailableSelectionOption(mobileUnitOptions, session.mobileUnits)) {
-        return session;
-      }
+    setSessions((previous) =>
+      previous.map((session) => {
+        if (session.key !== key) {
+          return session;
+        }
 
-      return {
-        ...session,
-        mobileUnits: appendSelectionSlot(session.mobileUnits)
-      };
-    });
+        const blocked = computeBlockedSelectionSetsForSession(session, previous, events, deal.id);
+        if (!hasAvailableSelectionOption(mobileUnitOptions, session.mobileUnits, blocked.mobileUnits)) {
+          return session;
+        }
+
+        return {
+          ...session,
+          mobileUnits: appendSelectionSlot(session.mobileUnits)
+        } satisfies SessionFormEntry;
+      })
+    );
   };
 
   const handleRemoveSessionMobileUnit = (key: string, index: number) => {
@@ -1141,13 +1314,17 @@ const DealDetailModal = ({
                         </div>
                         <Stack gap={3}>
                           {productSessions.map((session) => {
+                            const blockedSelections =
+                              blockedSelectionsBySession.get(session.key) ?? createEmptyBlockedSelectionSets();
                             const canAddTrainer = hasAvailableSelectionOption(
                               sessionTrainerOptions,
-                              session.trainers
+                              session.trainers,
+                              blockedSelections.trainers
                             );
                             const canAddMobileUnit = hasAvailableSelectionOption(
                               mobileUnitOptions,
-                              session.mobileUnits
+                              session.mobileUnits,
+                              blockedSelections.mobileUnits
                             );
 
                             return (
@@ -1236,7 +1413,8 @@ const DealDetailModal = ({
                                           const availableTrainerOptions = computeAvailableSelectionOptions(
                                             sessionTrainerOptions,
                                             session.trainers,
-                                            trainerIndex
+                                            trainerIndex,
+                                            blockedSelections.trainers
                                           );
 
                                           return (
@@ -1303,7 +1481,8 @@ const DealDetailModal = ({
                                             computeAvailableSelectionOptions(
                                               mobileUnitOptions,
                                               session.mobileUnits,
-                                              unitIndex
+                                              unitIndex,
+                                              blockedSelections.mobileUnits
                                             );
 
                                           return (
