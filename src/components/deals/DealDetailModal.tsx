@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
+import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
 import Col from 'react-bootstrap/Col';
+import Collapse from 'react-bootstrap/Collapse';
 import Form from 'react-bootstrap/Form';
 import InputGroup from 'react-bootstrap/InputGroup';
 import ListGroup from 'react-bootstrap/ListGroup';
@@ -431,6 +433,9 @@ const DealDetailModal = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [mapVisible, setMapVisible] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(true);
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
+  const [extraProductsExpanded, setExtraProductsExpanded] = useState(true);
 
   const productMap = useMemo(() => {
     const byDealProductId = new Map<number, string>();
@@ -465,6 +470,9 @@ const DealDetailModal = ({
     setShowDocumentUnsavedConfirm(false);
     setSaveFeedback(null);
     setSaveError(null);
+    setNotesExpanded(true);
+    setAttachmentsExpanded(true);
+    setExtraProductsExpanded(true);
   }, [deal.id]);
 
   const isNoteDirty =
@@ -688,6 +696,10 @@ const DealDetailModal = ({
       return right.localeCompare(left);
     });
   }, [deal.attachments, localAttachmentEntries]);
+
+  const notesCount = combinedNotes.length;
+  const attachmentsCount = combinedAttachments.length;
+  const extraProductsCount = deal.extraProducts.length;
 
   const handleRecommendedHoursChange = (dealProductId: number, value: string) => {
     setRecommendedHoursByProduct((previous) => ({
@@ -1354,41 +1366,65 @@ const DealDetailModal = ({
                           <div className="text-uppercase text-muted small">Notas</div>
                           <div className="fw-semibold">Seguimiento</div>
                         </div>
-                        <Button variant="outline-primary" size="sm" onClick={handleOpenCreateNoteModal}>
-                          Añadir nota
-                        </Button>
+                        <Stack direction="horizontal" gap={2} className="flex-wrap justify-content-end">
+                          {!notesExpanded ? (
+                            <Badge
+                              bg={notesCount > 0 ? 'danger' : 'dark'}
+                              className="text-nowrap"
+                            >
+                              {`Notas: ${notesCount}`}
+                            </Badge>
+                          ) : null}
+                          <Button
+                            variant="outline-secondary"
+                            size="sm"
+                            onClick={() => setNotesExpanded((previous) => !previous)}
+                            aria-expanded={notesExpanded}
+                            aria-controls="deal-notes-collapse"
+                            className="text-nowrap"
+                          >
+                            {notesExpanded ? 'Ocultar' : 'Mostrar'}
+                          </Button>
+                          <Button variant="outline-primary" size="sm" onClick={handleOpenCreateNoteModal}>
+                            Añadir nota
+                          </Button>
+                        </Stack>
                       </div>
-                      {combinedNotes.length > 0 ? (
-                        <ListGroup variant="flush" className="border rounded">
-                          {combinedNotes.map((note) => {
-                            const { preview, truncated } = extractNotePreview(note.content);
-                            return (
-                              <ListGroup.Item
-                                key={note.id}
-                                className="py-3"
-                                action
-                                onClick={() => handleOpenExistingNoteModal(note)}
-                              >
-                                <div className="fw-semibold mb-1" title={note.content}>
-                                  {truncated ? `${preview}…` : preview}
-                                </div>
-                                <div className="small text-muted d-flex flex-wrap gap-3">
-                                  <span>{renderNoteOrigin(note)}</span>
-                                  {typeof note.shareWithTrainer === 'boolean' ? (
-                                    <span>
-                                      Compartir con formador: {note.shareWithTrainer ? 'Sí' : 'No'}
-                                    </span>
-                                  ) : null}
-                                  {note.authorName ? <span>Autor: {note.authorName}</span> : null}
-                                  {note.createdAt ? <span>{formatDateLabel(note.createdAt)}</span> : null}
-                                </div>
-                              </ListGroup.Item>
-                            );
-                          })}
-                        </ListGroup>
-                      ) : (
-                        <div className="text-muted">Sin notas registradas.</div>
-                      )}
+                      <Collapse in={notesExpanded}>
+                        <div id="deal-notes-collapse">
+                          {notesCount > 0 ? (
+                            <ListGroup variant="flush" className="border rounded">
+                              {combinedNotes.map((note) => {
+                                const { preview, truncated } = extractNotePreview(note.content);
+                                return (
+                                  <ListGroup.Item
+                                    key={note.id}
+                                    className="py-3"
+                                    action
+                                    onClick={() => handleOpenExistingNoteModal(note)}
+                                  >
+                                    <div className="fw-semibold mb-1" title={note.content}>
+                                      {truncated ? `${preview}…` : preview}
+                                    </div>
+                                    <div className="small text-muted d-flex flex-wrap gap-3">
+                                      <span>{renderNoteOrigin(note)}</span>
+                                      {typeof note.shareWithTrainer === 'boolean' ? (
+                                        <span>
+                                          Compartir con formador: {note.shareWithTrainer ? 'Sí' : 'No'}
+                                        </span>
+                                      ) : null}
+                                      {note.authorName ? <span>Autor: {note.authorName}</span> : null}
+                                      {note.createdAt ? <span>{formatDateLabel(note.createdAt)}</span> : null}
+                                    </div>
+                                  </ListGroup.Item>
+                                );
+                              })}
+                            </ListGroup>
+                          ) : (
+                            <div className="text-muted">Sin notas registradas.</div>
+                          )}
+                        </div>
+                      </Collapse>
                     </div>
                     <div className="border rounded p-3">
                       <div className="d-flex justify-content-between align-items-center mb-3">
@@ -1396,95 +1432,145 @@ const DealDetailModal = ({
                           <div className="text-uppercase text-muted small">Adjuntos</div>
                           <div className="fw-semibold">Documentación</div>
                         </div>
-                        <Button variant="outline-primary" size="sm" onClick={() => setShowDocumentModal(true)}>
-                          Añadir documento
-                        </Button>
+                        <Stack direction="horizontal" gap={2} className="flex-wrap justify-content-end">
+                          {!attachmentsExpanded ? (
+                            <Badge
+                              bg={attachmentsCount > 0 ? 'danger' : 'dark'}
+                              className="text-nowrap"
+                            >
+                              {`Adjuntos: ${attachmentsCount}`}
+                            </Badge>
+                          ) : null}
+                          <Button
+                            variant="outline-secondary"
+                            size="sm"
+                            onClick={() => setAttachmentsExpanded((previous) => !previous)}
+                            aria-expanded={attachmentsExpanded}
+                            aria-controls="deal-attachments-collapse"
+                            className="text-nowrap"
+                          >
+                            {attachmentsExpanded ? 'Ocultar' : 'Mostrar'}
+                          </Button>
+                          <Button variant="outline-primary" size="sm" onClick={() => setShowDocumentModal(true)}>
+                            Añadir documento
+                          </Button>
+                        </Stack>
                       </div>
-                      {combinedAttachments.length > 0 ? (
-                        <Table size="sm" responsive className="mb-0">
-                          <thead>
-                            <tr>
-                              <th>Documento</th>
-                              <th>Origen</th>
-                              <th className="text-end">Acciones</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {combinedAttachments.map((attachment) => (
-                              <tr key={attachment.id}>
-                                <td>
-                                  <div className="fw-semibold">{attachment.name}</div>
-                                  {attachment.addedAt ? (
-                                    <div className="small text-muted">{formatDateLabel(attachment.addedAt)}</div>
-                                  ) : null}
-                                </td>
-                                <td className="text-muted">{renderAttachmentOrigin(attachment)}</td>
-                                <td className="text-end">
-                                  <Stack direction="horizontal" gap={2} className="justify-content-end">
-                                    <Button
-                                      as="a"
-                                      variant="link"
-                                      size="sm"
-                                      href={attachment.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      Ver
-                                    </Button>
-                                    <Button
-                                      as="a"
-                                      variant="link"
-                                      size="sm"
-                                      href={attachment.downloadUrl ?? attachment.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >
-                                      Descargar
-                                    </Button>
-                                  </Stack>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </Table>
-                      ) : (
-                        <div className="text-muted">Sin archivos disponibles.</div>
-                      )}
+                      <Collapse in={attachmentsExpanded}>
+                        <div id="deal-attachments-collapse">
+                          {attachmentsCount > 0 ? (
+                            <Table size="sm" responsive className="mb-0">
+                              <thead>
+                                <tr>
+                                  <th>Documento</th>
+                                  <th>Origen</th>
+                                  <th className="text-end">Acciones</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {combinedAttachments.map((attachment) => (
+                                  <tr key={attachment.id}>
+                                    <td>
+                                      <div className="fw-semibold">{attachment.name}</div>
+                                      {attachment.addedAt ? (
+                                        <div className="small text-muted">{formatDateLabel(attachment.addedAt)}</div>
+                                      ) : null}
+                                    </td>
+                                    <td className="text-muted">{renderAttachmentOrigin(attachment)}</td>
+                                    <td className="text-end">
+                                      <Stack direction="horizontal" gap={2} className="justify-content-end">
+                                        <Button
+                                          as="a"
+                                          variant="link"
+                                          size="sm"
+                                          href={attachment.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          Ver
+                                        </Button>
+                                        <Button
+                                          as="a"
+                                          variant="link"
+                                          size="sm"
+                                          href={attachment.downloadUrl ?? attachment.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          Descargar
+                                        </Button>
+                                      </Stack>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </Table>
+                          ) : (
+                            <div className="text-muted">Sin archivos disponibles.</div>
+                          )}
+                        </div>
+                      </Collapse>
                     </div>
                     <div className="border rounded p-3">
-                      <div className="text-uppercase text-muted small mb-2">Productos extras</div>
-                      {deal.extraProducts.length > 0 ? (
-                        <Table responsive size="sm" className="mb-0">
-                          <thead>
-                            <tr>
-                              <th>Producto</th>
-                              <th>Cantidad</th>
-                              <th>Notas</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {deal.extraProducts.map((product) => (
-                              <tr key={`extra-${product.dealProductId}`}>
-                                <td>{product.name}</td>
-                                <td>{product.quantity}</td>
-                                <td>
-                                  {product.notes.length > 0 ? (
-                                    <ul className="mb-0 ps-3">
-                                      {product.notes.map((note) => (
-                                        <li key={`extra-note-${note.id}`}>{note.content}</li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <span className="text-muted">Sin notas</span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </Table>
-                      ) : (
-                        <div className="text-muted">No hay productos extras registrados.</div>
-                      )}
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <div className="text-uppercase text-muted small">Productos extras</div>
+                        <Stack direction="horizontal" gap={2} className="flex-wrap justify-content-end">
+                          {!extraProductsExpanded ? (
+                            <Badge
+                              bg={extraProductsCount > 0 ? 'danger' : 'dark'}
+                              className="text-nowrap"
+                            >
+                              {`Productos extras: ${extraProductsCount}`}
+                            </Badge>
+                          ) : null}
+                          <Button
+                            variant="outline-secondary"
+                            size="sm"
+                            onClick={() => setExtraProductsExpanded((previous) => !previous)}
+                            aria-expanded={extraProductsExpanded}
+                            aria-controls="deal-extra-products-collapse"
+                            className="text-nowrap"
+                          >
+                            {extraProductsExpanded ? 'Ocultar' : 'Mostrar'}
+                          </Button>
+                        </Stack>
+                      </div>
+                      <Collapse in={extraProductsExpanded}>
+                        <div id="deal-extra-products-collapse">
+                          {extraProductsCount > 0 ? (
+                            <Table responsive size="sm" className="mb-0">
+                              <thead>
+                                <tr>
+                                  <th>Producto</th>
+                                  <th>Cantidad</th>
+                                  <th>Notas</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {deal.extraProducts.map((product) => (
+                                  <tr key={`extra-${product.dealProductId}`}>
+                                    <td>{product.name}</td>
+                                    <td>{product.quantity}</td>
+                                    <td>
+                                      {product.notes.length > 0 ? (
+                                        <ul className="mb-0 ps-3">
+                                          {product.notes.map((note) => (
+                                            <li key={`extra-note-${note.id}`}>{note.content}</li>
+                                          ))}
+                                        </ul>
+                                      ) : (
+                                        <span className="text-muted">Sin notas</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </Table>
+                          ) : (
+                            <div className="text-muted">No hay productos extras registrados.</div>
+                          )}
+                        </div>
+                      </Collapse>
                     </div>
                   </Stack>
                 </div>
