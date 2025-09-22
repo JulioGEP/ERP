@@ -22,6 +22,19 @@ const buildEventTitle = (event: CalendarEvent) => {
     segments.push(event.sede);
   }
 
+  if (event.mobileUnit) {
+    segments.push(`Unidad: ${event.mobileUnit}`);
+  }
+
+  if (event.trainers && event.trainers.length > 0) {
+    const label = event.trainers.length === 1 ? 'Formador' : 'Formadores';
+    segments.push(`${label}: ${event.trainers.join(', ')}`);
+  }
+
+  if (event.logisticsInfo) {
+    segments.push(`Info logística: ${event.logisticsInfo}`);
+  }
+
   return segments.join(' · ');
 };
 
@@ -56,7 +69,10 @@ const CalendarView = ({ events }: CalendarViewProps) => (
               productName: event.productName,
               attendees: event.attendees,
               sede: event.sede,
-              address: event.address
+              address: event.address,
+              trainers: event.trainers,
+              mobileUnit: event.mobileUnit,
+              logisticsInfo: event.logisticsInfo
             }
           }))}
           locales={[esLocale]}
