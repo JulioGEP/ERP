@@ -6,6 +6,9 @@ const DEFAULT_STAGE_ID = 3;
 const SEDE_FIELD_KEY = '676d6bd51e52999c582c01f67c99a35ed30bf6ae';
 const ADDRESS_FIELD_KEY = '8b2a7570f5ba8aa4754f061cd9dc92fd778376a7';
 const RECOMMENDED_HOURS_FIELD_KEY = '38f11c8876ecde803a027fbf3c9041fda2ae7eb7';
+const CAES_FIELD_KEY = 'e1971bf3a21d48737b682bf8d864ddc5eb15a351';
+const FUNDAE_FIELD_KEY = '245d60d4d18aec40ba888998ef92e5d00e494583';
+const HOTEL_PERNOCTA_FIELD_KEY = 'c3a6daf8eb5b4e59c3c07cda8e01f43439101269';
 const TRAINING_CODE_PREFIX = 'form-';
 
 interface PipedriveDeal {
@@ -99,6 +102,9 @@ interface NormalisedDeal {
   clientName: string | null;
   sede: string | null;
   address: string | null;
+  caes: string | null;
+  fundae: string | null;
+  hotelPernocta: string | null;
   pipelineId: number | null;
   pipelineName: string | null;
   wonDate: string | null;
@@ -206,6 +212,50 @@ const parseDateValue = (value: unknown): string | null => {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const normaliseTextValue = (value: unknown): string | null => {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const labels = value
+      .map((item) => normaliseTextValue(item))
+      .filter((label): label is string => Boolean(label && label.trim().length > 0));
+
+    if (labels.length > 0) {
+      return Array.from(new Set(labels)).join(', ');
+    }
+
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+
+    if (typeof record.label === 'string') {
+      const trimmed = record.label.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    if ('value' in record) {
+      return normaliseTextValue(record.value);
+    }
+  }
+
+  return null;
 };
 
 const fetchDealWonDate = async (
@@ -707,6 +757,10 @@ const normaliseDeal = async (
   const addressRaw = (deal as Record<string, unknown>)[ADDRESS_FIELD_KEY];
   const address = typeof addressRaw === 'string' && addressRaw.trim().length > 0 ? addressRaw.trim() : null;
 
+  const caes = normaliseTextValue((deal as Record<string, unknown>)[CAES_FIELD_KEY]);
+  const fundae = normaliseTextValue((deal as Record<string, unknown>)[FUNDAE_FIELD_KEY]);
+  const hotelPernocta = normaliseTextValue((deal as Record<string, unknown>)[HOTEL_PERNOCTA_FIELD_KEY]);
+
   const pipelineId = toInteger(deal.pipeline_id);
   const pipelineName = pipelineId != null ? pipelineMap.get(pipelineId) ?? null : null;
   const ensureWonDate = async (): Promise<string | null> => {
@@ -756,6 +810,9 @@ const normaliseDeal = async (
     clientName: client.name,
     sede,
     address,
+    caes,
+    fundae,
+    hotelPernocta,
     pipelineId,
     pipelineName,
     wonDate,
