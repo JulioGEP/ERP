@@ -17,7 +17,6 @@ const CalendarView = () => (
           center: 'title',
           right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
         }}
-        height="auto"
         weekends
         selectable={false}
         editable={false}
