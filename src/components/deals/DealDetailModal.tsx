@@ -227,9 +227,27 @@ const DealDetailModal = ({
 
   const [sessions, setSessions] = useState<SessionFormEntry[]>(initialSessions);
 
+  const initialRecommendedHours = useMemo(() => {
+    const productWithHours = deal.trainingProducts.find(
+      (product) => product.recommendedHours != null
+    );
+
+    if (!productWithHours || productWithHours.recommendedHours == null) {
+      return '';
+    }
+
+    return String(productWithHours.recommendedHours);
+  }, [deal.trainingProducts]);
+
+  const [recommendedHoursInput, setRecommendedHoursInput] = useState(initialRecommendedHours);
+
   useEffect(() => {
     setSessions(initialSessions);
   }, [initialSessions, show]);
+
+  useEffect(() => {
+    setRecommendedHoursInput(initialRecommendedHours);
+  }, [initialRecommendedHours]);
 
   const localNoteEntries: DisplayNote[] = useMemo(
     () =>
@@ -284,6 +302,32 @@ const DealDetailModal = ({
     () => deal.trainingProducts.reduce((acc, product) => acc + countSessionsForProduct(product), 0),
     [deal.trainingProducts]
   );
+
+  const handleRecommendedHoursChange = (value: string) => {
+    setRecommendedHoursInput(value);
+
+    let parsedHours: number | null = null;
+    if (value !== '') {
+      const numericValue = Number(value);
+      parsedHours = Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    setSessions((previous) =>
+      previous.map((session) => {
+        const updated: SessionFormEntry = {
+          ...session,
+          recommendedHours: parsedHours
+        };
+
+        if (!session.endTouched) {
+          const computed = computeEndFromStart(session.start, parsedHours);
+          updated.end = computed;
+        }
+
+        return updated;
+      })
+    );
+  };
 
   const handleSessionStartChange = (key: string, value: string) => {
     setSessions((previous) =>
@@ -577,16 +621,9 @@ const DealDetailModal = ({
                 <Row className="g-3">
                   <Col lg={6} md={6}>
                     <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Número de presupuesto</div>
-                      <div className="fw-semibold">#{deal.id}</div>
-                    </div>
-                  </Col>
-                  <Col lg={6} md={6}>
-                    <div className="d-flex flex-column gap-1 h-100">
                       <div className="text-uppercase text-muted small">Cliente</div>
                       <div className="fw-semibold">
                         {deal.clientName ?? 'Sin organización asociada'}
-                        {deal.clientId ? <span className="text-muted"> · #{deal.clientId}</span> : null}
                       </div>
                     </div>
                   </Col>
@@ -602,7 +639,12 @@ const DealDetailModal = ({
                       {deal.trainingProducts.length > 0 ? (
                         <Stack direction="horizontal" className="flex-wrap" gap={2}>
                           {deal.trainingProducts.map((product) => (
-                            <Badge key={product.dealProductId} bg="info" text="dark" className="px-3 py-2 rounded-pill">
+                            <Badge
+                              key={product.dealProductId}
+                              bg="info"
+                              text="dark"
+                              className="px-3 py-2 rounded-pill"
+                            >
                               {product.name}
                             </Badge>
                           ))}
@@ -612,10 +654,24 @@ const DealDetailModal = ({
                       )}
                     </div>
                   </Col>
-                  <Col lg={6} md={6}>
+                  <Col lg={3} md={3}>
                     <div className="d-flex flex-column gap-1 h-100">
                       <div className="text-uppercase text-muted small">Número de sesiones</div>
                       <div className="fw-semibold">{totalSessions}</div>
+                    </div>
+                  </Col>
+                  <Col lg={3} md={3}>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Horas recomendadas</div>
+                      <Form.Control
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        value={recommendedHoursInput}
+                        onChange={(event) => handleRecommendedHoursChange(event.target.value)}
+                        placeholder="Sin horas recomendadas"
+                        disabled={deal.trainingProducts.length === 0}
+                      />
                     </div>
                   </Col>
                   <Col lg={6} md={6}>
@@ -624,7 +680,7 @@ const DealDetailModal = ({
                       <div className="fw-semibold">{deal.sede ?? 'Sin sede'}</div>
                     </div>
                   </Col>
-                  <Col lg={12}>
+                  <Col lg={6} md={6}>
                     <div className="d-flex flex-column gap-1 h-100">
                       <div className="text-uppercase text-muted small">Dirección de la formación</div>
                       {deal.address ? (
@@ -633,23 +689,6 @@ const DealDetailModal = ({
                         </Button>
                       ) : (
                         <div className="text-muted">Sin dirección definida</div>
-                      )}
-                    </div>
-                  </Col>
-                  <Col lg={12}>
-                    <div className="d-flex flex-column gap-1 h-100">
-                      <div className="text-uppercase text-muted small">Horas recomendadas</div>
-                      {deal.trainingProducts.length > 0 ? (
-                        <ul className="mb-0 ps-3">
-                          {deal.trainingProducts.map((product) => (
-                            <li key={`hours-${product.dealProductId}`}>
-                              <span className="fw-semibold">{product.name}:</span>{' '}
-                              {product.recommendedHoursRaw ?? 'Sin información'}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="text-muted">Sin información disponible</div>
                       )}
                     </div>
                   </Col>
