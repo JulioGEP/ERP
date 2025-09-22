@@ -56,6 +56,20 @@
   padding: 1.5rem;
 }
 
+.calendar-scroll-container {
+  height: clamp(480px, 70vh, 900px);
+}
+
+.calendar-scroll-container .fc,
+.calendar-scroll-container .fc .fc-view-harness,
+.calendar-scroll-container .fc .fc-view-harness-active {
+  height: 100%;
+}
+
+.calendar-scroll-container .fc .fc-timegrid-body .fc-scroller {
+  overflow-y: auto !important;
+}
+
 .calendar-card .fc,
 .deals-card table {
   font-size: 0.95rem;
