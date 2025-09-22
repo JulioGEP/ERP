@@ -1,6 +1,7 @@
 node_modules
 .DS_Store
 dist
+tsconfig.tsbuildinfo
 *.local
 .env
 .env.*
