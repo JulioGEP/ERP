@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
 import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
@@ -7,6 +7,7 @@ import Card from 'react-bootstrap/Card';
 import Placeholder from 'react-bootstrap/Placeholder';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
+import Form from 'react-bootstrap/Form';
 import { CalendarEvent } from '../../services/calendar';
 import { fetchDealById, fetchDeals, DealRecord } from '../../services/deals';
 import DealDetailModal from './DealDetailModal';
@@ -32,11 +33,15 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['deals', 'stage-3'],
     queryFn: fetchDeals,
-    staleTime: 1000 * 60
+    staleTime: 1000 * 60,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false
   });
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const uploadDeal = useMutation({
     mutationFn: fetchDealById,
@@ -98,6 +103,40 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     setSelectedDealId(null);
   };
 
+  useEffect(() => {
+    if (!data || data.length === 0) {
+      setCurrentPage(1);
+      return;
+    }
+
+    const totalAvailablePages = Math.max(1, Math.ceil(data.length / pageSize));
+    setCurrentPage((previous) => (previous > totalAvailablePages ? totalAvailablePages : previous));
+  }, [data, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [pageSize]);
+
+  const totalPages = useMemo(() => {
+    if (!data || data.length === 0) {
+      return 1;
+    }
+
+    return Math.max(1, Math.ceil(data.length / pageSize));
+  }, [data, pageSize]);
+
+  const pageNumbers = useMemo(() => Array.from({ length: totalPages }, (_, index) => index + 1), [totalPages]);
+
+  const paginatedDeals = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return data.slice(startIndex, endIndex);
+  }, [currentPage, data, pageSize]);
+
   const selectedDeal = useMemo(() => {
     if (!selectedDealId || !data) {
       return null;
@@ -114,9 +153,6 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
             <Stack direction="horizontal" gap={2}>
               <Button variant="primary" onClick={handleUploadDeal} disabled={uploadDeal.isPending}>
                 {uploadDeal.isPending ? 'Subiendo…' : 'Subir Deal'}
-              </Button>
-              <Button variant="outline-primary" onClick={() => refetch()} disabled={isFetching && !isLoading}>
-                {isFetching && !isLoading ? 'Recargando…' : 'Recargar datos'}
               </Button>
             </Stack>
           </div>
@@ -154,8 +190,8 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
               <tbody>
                 {isLoading && skeletonRows}
 
-                {!isLoading && data && data.length > 0 &&
-                  data.map((deal) => (
+                {!isLoading && paginatedDeals.length > 0 &&
+                  paginatedDeals.map((deal) => (
                     <tr
                       key={deal.id}
                       role="button"
@@ -184,6 +220,72 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
               </tbody>
             </Table>
           </div>
+
+          {!isLoading && data && data.length > 0 && (
+            <div className="d-flex justify-content-end align-items-center gap-3 flex-wrap mt-3">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted small">Por página:</span>
+                <Form.Select
+                  size="sm"
+                  aria-label="Seleccionar número de presupuestos por página"
+                  value={pageSize}
+                  onChange={(event) => setPageSize(Number.parseInt(event.target.value, 10))}
+                  style={{ maxWidth: '120px' }}
+                >
+                  {[25, 50, 75, 100].map((option) => (
+                    <option key={`page-size-${option}`} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Form.Select>
+              </div>
+
+              <Stack direction="horizontal" gap={1} className="flex-wrap">
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  {'<<'}
+                </Button>
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
+                  disabled={currentPage === 1}
+                >
+                  {'<'}
+                </Button>
+                {pageNumbers.map((pageNumber) => (
+                  <Button
+                    key={`page-${pageNumber}`}
+                    variant={pageNumber === currentPage ? 'primary' : 'outline-primary'}
+                    size="sm"
+                    onClick={() => setCurrentPage(pageNumber)}
+                  >
+                    {pageNumber}
+                  </Button>
+                ))}
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  onClick={() => setCurrentPage((previous) => Math.min(totalPages, previous + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  {'>'}
+                </Button>
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                >
+                  {'>>'}
+                </Button>
+              </Stack>
+            </div>
+          )}
 
           {!isLoading && data && data.length === 0 && !isError && (
             <div className="text-center py-5 text-secondary">
