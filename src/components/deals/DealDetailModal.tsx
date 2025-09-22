@@ -804,42 +804,50 @@ const DealDetailModal = ({
                       </Col>
                     </Row>
                     <div>
-                      <div className="text-uppercase text-muted small mb-2">Formación</div>
                       {deal.trainingProducts.length > 0 ? (
-                        <Stack gap={2}>
-                          {deal.trainingProducts.map((product) => (
-                            <Row key={product.dealProductId} className="g-2 align-items-center">
-                              <Col md={8} sm={7}>
-                                <div className="fw-semibold text-truncate" title={product.name}>
-                                  {product.name}
-                                </div>
-                              </Col>
-                              <Col md={4} sm={5}>
-                                <Form.Group
-                                  controlId={`recommended-hours-${product.dealProductId}`}
-                                  className="mb-0"
-                                >
-                                  <Form.Label className="text-uppercase text-muted small">Horas</Form.Label>
-                                  <Form.Control
-                                    type="number"
-                                    min={0}
-                                    step={0.5}
-                                    value={recommendedHoursByProduct[product.dealProductId] ?? ''}
-                                    onChange={(event) =>
-                                      handleRecommendedHoursChange(product.dealProductId, event.target.value)
-                                    }
-                                    placeholder="Sin horas"
-                                  />
-                                </Form.Group>
-                              </Col>
-                            </Row>
-                          ))}
-                        </Stack>
+                        <>
+                          <Row className="g-2 align-items-center text-uppercase text-muted small mb-2">
+                            <Col md={8} sm={7}>Formación</Col>
+                            <Col md={4} sm={5} className="text-md-end">
+                              <span className="d-inline-block w-100">Horas</span>
+                            </Col>
+                          </Row>
+                          <Stack gap={2}>
+                            {deal.trainingProducts.map((product) => (
+                              <Row key={product.dealProductId} className="g-2 align-items-center">
+                                <Col md={8} sm={7}>
+                                  <div className="fw-semibold text-truncate" title={product.name}>
+                                    {product.name}
+                                  </div>
+                                </Col>
+                                <Col md={4} sm={5}>
+                                  <Form.Group controlId={`recommended-hours-${product.dealProductId}`} className="mb-0">
+                                    <Form.Label className="visually-hidden">Horas</Form.Label>
+                                    <Form.Control
+                                      type="number"
+                                      min={0}
+                                      step={0.5}
+                                      value={recommendedHoursByProduct[product.dealProductId] ?? ''}
+                                      onChange={(event) =>
+                                        handleRecommendedHoursChange(product.dealProductId, event.target.value)
+                                      }
+                                      placeholder="Sin horas"
+                                      aria-label="Horas recomendadas"
+                                    />
+                                  </Form.Group>
+                                </Col>
+                              </Row>
+                            ))}
+                          </Stack>
+                        </>
                       ) : (
-                        <div className="text-muted">Sin productos formativos</div>
+                        <div>
+                          <div className="text-uppercase text-muted small mb-2">Formación</div>
+                          <div className="text-muted">Sin productos formativos</div>
+                        </div>
                       )}
                     </div>
-                    <Row className="g-3 align-items-end">
+                    <Row className="g-3 align-items-start">
                       <Col lg={8} md={12}>
                         <Form.Group controlId="general-address">
                           <Form.Label>Dirección de la formación</Form.Label>
