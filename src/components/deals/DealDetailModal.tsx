@@ -299,10 +299,7 @@ const DealDetailModal = ({
     });
   }, [deal.attachments, localAttachmentEntries]);
 
-  const totalSessions = useMemo(
-    () => deal.trainingProducts.reduce((acc, product) => acc + countSessionsForProduct(product), 0),
-    [deal.trainingProducts]
-  );
+  const totalSessions = sessions.length;
 
   const handleSessionStartChange = (key: string, value: string) => {
     setSessions((previous) =>
@@ -370,6 +367,37 @@ const DealDetailModal = ({
           : session
       )
     );
+  };
+
+  const handleAddSession = (product: DealProduct) => {
+    setSessions((previous) => {
+      const productSessions = previous.filter((session) => session.dealProductId === product.dealProductId);
+      const nextIndex =
+        productSessions.length > 0
+          ? Math.max(...productSessions.map((session) => session.sessionIndex)) + 1
+          : 0;
+
+      const newSession: SessionFormEntry = {
+        key: `${product.dealProductId}-${generateId()}`,
+        dealProductId: product.dealProductId,
+        productId: product.productId,
+        productName: product.name,
+        recommendedHours: product.recommendedHours,
+        recommendedHoursRaw: product.recommendedHoursRaw,
+        sessionIndex: nextIndex,
+        start: '',
+        end: '',
+        endTouched: false,
+        attendees: '',
+        sede: deal.sede ?? '',
+        address: deal.address ?? '',
+        trainers: [],
+        mobileUnit: '',
+        logisticsInfo: ''
+      };
+
+      return [...previous, newSession];
+    });
   };
 
   const persistExtras = (notes: StoredDealNote[], documents: StoredDealDocument[]) => {
@@ -850,7 +878,7 @@ const DealDetailModal = ({
                 <Stack gap={3}>
                   {deal.trainingProducts.map((product) => {
                     const productSessions = sessions.filter((session) => session.dealProductId === product.dealProductId);
-                    const sessionCount = countSessionsForProduct(product);
+                    const sessionCount = productSessions.length;
                     return (
                       <div key={`calendar-${product.dealProductId}`} className="border rounded p-3">
                         <div className="d-flex justify-content-between align-items-center mb-3">
@@ -861,6 +889,9 @@ const DealDetailModal = ({
                               {product.recommendedHoursRaw ?? 'Horas recomendadas no disponibles'}
                             </div>
                           </div>
+                          <Button variant="outline-primary" size="sm" onClick={() => handleAddSession(product)}>
+                            Añadir Sesión
+                          </Button>
                         </div>
                         <Stack gap={3}>
                           {productSessions.map((session) => (
