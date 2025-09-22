@@ -11,6 +11,30 @@ const FUNDAE_FIELD_KEY = '245d60d4d18aec40ba888998ef92e5d00e494583';
 const HOTEL_PERNOCTA_FIELD_KEY = 'c3a6daf8eb5b4e59c3c07cda8e01f43439101269';
 const TRAINING_CODE_PREFIX = 'form-';
 
+const normaliseSedeKey = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+
+const SEDE_LABEL_MAPPINGS = new Map<string, string>([
+  [normaliseSedeKey('C/ Primavera, 1, 28500, Arganda del Rey, Madrid'), 'GEP Arganda'],
+  [normaliseSedeKey('C/ Moratín, 100, 08206 Sabadell, Barcelona'), 'GEP Sabadell'],
+  [normaliseSedeKey('C/ Hungría, 11 Nave 1B. 11011, Cádiz'), 'In company'],
+  [normaliseSedeKey('In Company - Unidad Móvil'), 'In company']
+]);
+
+const mapSedeLabel = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const mapped = SEDE_LABEL_MAPPINGS.get(normaliseSedeKey(value));
+  return mapped ?? null;
+};
+
 interface PipedriveDeal {
   id: number;
   title: string;
@@ -843,10 +867,11 @@ const normaliseDeal = async (
 ): Promise<NormalisedDeal> => {
   const client = extractClient(deal);
   const sedeRaw = (deal as Record<string, unknown>)[SEDE_FIELD_KEY];
-  const sede = normaliseFieldValue(sedeRaw, fieldOptions.sede);
+  const initialSede = normaliseFieldValue(sedeRaw, fieldOptions.sede);
 
   const addressRaw = (deal as Record<string, unknown>)[ADDRESS_FIELD_KEY];
   const address = typeof addressRaw === 'string' && addressRaw.trim().length > 0 ? addressRaw.trim() : null;
+  const sede = mapSedeLabel(initialSede) ?? initialSede ?? mapSedeLabel(address);
 
   const caesRaw = (deal as Record<string, unknown>)[CAES_FIELD_KEY];
   const caes = normaliseFieldValue(caesRaw, fieldOptions.caes);
