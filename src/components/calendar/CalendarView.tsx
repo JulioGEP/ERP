@@ -8,17 +8,7 @@ import Card from 'react-bootstrap/Card';
 
 const CalendarView = () => (
   <Card className="calendar-card border-0">
-    <Card.Body>
-      <div className="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
-        <div>
-          <Card.Title as="h2" className="h4 mb-1 text-primary fw-semibold">
-            Calendario de formaciones
-          </Card.Title>
-          <Card.Subtitle className="text-secondary">
-            Consulta por mes, semana, día o vista agenda.
-          </Card.Subtitle>
-        </div>
-      </div>
+    <Card.Body className="p-0">
       <FullCalendar
         plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
         initialView="timeGridWeek"
@@ -32,6 +22,7 @@ const CalendarView = () => (
         selectable={false}
         editable={false}
         slotDuration="00:30:00"
+        scrollTime="06:00:00"
         nowIndicator
         events={[]}
         locales={[esLocale]}
