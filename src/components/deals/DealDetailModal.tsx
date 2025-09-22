@@ -576,14 +576,14 @@ const DealDetailModal = ({
                 </div>
                 <Row className="g-3">
                   <Col lg={6} md={6}>
-                    <div className="border rounded p-3 h-100">
-                      <div className="text-uppercase text-muted small mb-1">Número de presupuesto</div>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Número de presupuesto</div>
                       <div className="fw-semibold">#{deal.id}</div>
                     </div>
                   </Col>
                   <Col lg={6} md={6}>
-                    <div className="border rounded p-3 h-100">
-                      <div className="text-uppercase text-muted small mb-1">Cliente</div>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Cliente</div>
                       <div className="fw-semibold">
                         {deal.clientName ?? 'Sin organización asociada'}
                         {deal.clientId ? <span className="text-muted"> · #{deal.clientId}</span> : null}
@@ -591,14 +591,14 @@ const DealDetailModal = ({
                     </div>
                   </Col>
                   <Col lg={6} md={6}>
-                    <div className="border rounded p-3 h-100">
-                      <div className="text-uppercase text-muted small mb-1">Tipo de formación</div>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Tipo de formación</div>
                       <div className="fw-semibold">{deal.pipelineName ?? 'Sin embudo definido'}</div>
                     </div>
                   </Col>
                   <Col lg={6} md={6}>
-                    <div className="border rounded p-3 h-100">
-                      <div className="text-uppercase text-muted small mb-1">Formación</div>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Formación</div>
                       {deal.trainingProducts.length > 0 ? (
                         <Stack direction="horizontal" className="flex-wrap" gap={2}>
                           {deal.trainingProducts.map((product) => (
@@ -608,25 +608,25 @@ const DealDetailModal = ({
                           ))}
                         </Stack>
                       ) : (
-                        <div className="text-muted">Sin productos form-</div>
+                        <div className="text-muted">Sin productos formativos</div>
                       )}
                     </div>
                   </Col>
                   <Col lg={6} md={6}>
-                    <div className="border rounded p-3 h-100">
-                      <div className="text-uppercase text-muted small mb-1">Número de sesiones</div>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Número de sesiones</div>
                       <div className="fw-semibold">{totalSessions}</div>
                     </div>
                   </Col>
                   <Col lg={6} md={6}>
-                    <div className="border rounded p-3 h-100">
-                      <div className="text-uppercase text-muted small mb-1">Sede</div>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Sede</div>
                       <div className="fw-semibold">{deal.sede ?? 'Sin sede'}</div>
                     </div>
                   </Col>
                   <Col lg={12}>
-                    <div className="border rounded p-3 h-100">
-                      <div className="text-uppercase text-muted small mb-1">Dirección de la formación</div>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Dirección de la formación</div>
                       {deal.address ? (
                         <Button variant="link" className="px-0" onClick={() => setMapVisible(true)}>
                           {deal.address}
@@ -637,8 +637,8 @@ const DealDetailModal = ({
                     </div>
                   </Col>
                   <Col lg={12}>
-                    <div className="border rounded p-3 h-100">
-                      <div className="text-uppercase text-muted small mb-1">Horas recomendadas</div>
+                    <div className="d-flex flex-column gap-1 h-100">
+                      <div className="text-uppercase text-muted small">Horas recomendadas</div>
                       {deal.trainingProducts.length > 0 ? (
                         <ul className="mb-0 ps-3">
                           {deal.trainingProducts.map((product) => (
