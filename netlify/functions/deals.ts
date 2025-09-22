@@ -312,43 +312,67 @@ type DealFieldOptions = {
   hotelPernocta: Map<string, string>;
 };
 
-const loadFieldOptions = async (
+type DealFieldOption = { id?: number | string | null; label?: string | null };
+type DealFieldDefinition = { key?: string | null; options?: DealFieldOption[] | null };
+
+const normaliseFieldOptions = (
   fieldKey: string,
-  fieldLabel: string
-): Promise<Map<string, string>> => {
-  type FieldOption = { id: number | string; label: string };
-  type FieldResponse = { data?: { options?: FieldOption[] } | null };
+  fieldLabel: string,
+  fields: DealFieldDefinition[]
+): Map<string, string> => {
+  const map = new Map<string, string>();
+  const field = fields.find((candidate) => typeof candidate.key === 'string' && candidate.key === fieldKey);
 
-  try {
-    const field = await fetchJson<FieldResponse>(`dealFields/${fieldKey}`, {});
-    const options = field.data?.options ?? [];
-    const map = new Map<string, string>();
-
-    options.forEach((option) => {
-      if (typeof option.label === 'string') {
-        const trimmed = option.label.trim();
-        if (trimmed.length > 0) {
-          map.set(String(option.id), trimmed);
-        }
-      }
-    });
-
+  if (!field) {
+    console.warn(`No se encontró el campo ${fieldLabel} (${fieldKey}) en la definición de campos de Pipedrive.`);
     return map;
-  } catch (error) {
-    console.error(`No se pudieron cargar las opciones del campo ${fieldLabel}`, error);
-    return new Map<string, string>();
   }
+
+  const options = Array.isArray(field.options) ? field.options : [];
+
+  options.forEach((option) => {
+    const identifier = option?.id;
+    const label = option?.label;
+
+    if ((typeof identifier === 'string' || typeof identifier === 'number') && typeof label === 'string') {
+      const trimmed = label.trim();
+
+      if (trimmed.length > 0) {
+        map.set(String(identifier), trimmed);
+      }
+    }
+  });
+
+  if (map.size === 0) {
+    console.warn(`El campo ${fieldLabel} (${fieldKey}) no tiene opciones configuradas en Pipedrive.`);
+  }
+
+  return map;
 };
 
 const loadDealFieldOptions = async (): Promise<DealFieldOptions> => {
-  const [sede, caes, fundae, hotelPernocta] = await Promise.all([
-    loadFieldOptions(SEDE_FIELD_KEY, 'Sede'),
-    loadFieldOptions(CAES_FIELD_KEY, 'CAES'),
-    loadFieldOptions(FUNDAE_FIELD_KEY, 'FUNDAE'),
-    loadFieldOptions(HOTEL_PERNOCTA_FIELD_KEY, 'Hotel y Pernocta')
-  ]);
+  type FieldsResponse = { data?: DealFieldDefinition[] | null };
 
-  return { sede, caes, fundae, hotelPernocta };
+  try {
+    const response = await fetchJson<FieldsResponse>('dealFields', {});
+    const fields = response.data ?? [];
+
+    return {
+      sede: normaliseFieldOptions(SEDE_FIELD_KEY, 'Sede', fields),
+      caes: normaliseFieldOptions(CAES_FIELD_KEY, 'CAES', fields),
+      fundae: normaliseFieldOptions(FUNDAE_FIELD_KEY, 'FUNDAE', fields),
+      hotelPernocta: normaliseFieldOptions(HOTEL_PERNOCTA_FIELD_KEY, 'Hotel y Pernocta', fields)
+    };
+  } catch (error) {
+    console.error('No se pudieron cargar los campos de Pipedrive', error);
+
+    return {
+      sede: new Map<string, string>(),
+      caes: new Map<string, string>(),
+      fundae: new Map<string, string>(),
+      hotelPernocta: new Map<string, string>()
+    };
+  }
 };
 
 const getTrimmedString = (input: unknown): string | null => {
