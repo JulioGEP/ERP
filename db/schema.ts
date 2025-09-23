@@ -43,9 +43,9 @@ export const calendarEvents = pgTable("calendar_events", {
   orgId: integer("org_id").references(() => organizations.id),
   startsAt: timestamp("starts_at").notNull(),
   endsAt: timestamp("ends_at").notNull(),
-  type: varchar("type", { length: 64 }),
+  type: varchar("type", { length: 64 }),        // p.ej. training, inspection...
   location: varchar("location", { length: 255 }),
-  instructors: jsonb("instructors"),
+  instructors: jsonb("instructors"),            // lista flexible
   visibility: varchar("visibility", { length: 16 }).default("internal"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
@@ -72,28 +72,4 @@ export const documents = pgTable("documents", {
   s3Bucket: varchar("s3_bucket", { length: 128 }),
   signedUntil: timestamp("signed_until"),
   createdAt: timestamp("created_at").defaultNow()
-});
-
-export const calendarEvents = pgTable("calendar_events", {
-  id: serial("id").primaryKey(),
-  dealId: integer("deal_id").references(() => deals.id),
-  orgId: integer("org_id").references(() => organizations.id),
-  startsAt: timestamp("starts_at").notNull(),
-  endsAt: timestamp("ends_at").notNull(),
-  type: varchar("type", { length: 64 }),        // p.ej. training, inspection...
-  location: varchar("location", { length: 255 }),
-  instructors: jsonb("instructors"),            // lista flexible
-  visibility: varchar("visibility", { length: 16 }).default("internal"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-
-export const notes = pgTable("notes", {
-  id: serial("id").primaryKey(),
-  entityType: varchar("entity_type", { length: 16 }).notNull(), // 'deal'|'org'|'person'
-  entityId: integer("entity_id").notNull(),
-  authorId: integer("author_id"),
-  body: varchar("body", { length: 4000 }).notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
 });
