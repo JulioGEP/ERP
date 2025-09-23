@@ -84,8 +84,10 @@ const normaliseDealRecords = (value: unknown): DealRecord[] => {
     .filter((deal): deal is DealRecord => deal !== null);
 };
 
+const NETLIFY_DEALS_ENDPOINT = '/.netlify/functions/api/deals';
+
 export const fetchDeals = async (): Promise<DealRecord[]> => {
-  const response = await fetch('/.netlify/functions/deals');
+  const response = await fetch(NETLIFY_DEALS_ENDPOINT);
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -96,7 +98,8 @@ export const fetchDeals = async (): Promise<DealRecord[]> => {
 };
 
 export const fetchDealById = async (dealId: number): Promise<DealRecord> => {
-  const response = await fetch(`/.netlify/functions/deals?dealId=${dealId}`);
+  const query = new URLSearchParams({ dealId: String(dealId) });
+  const response = await fetch(`${NETLIFY_DEALS_ENDPOINT}?${query.toString()}`);
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
