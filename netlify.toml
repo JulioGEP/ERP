@@ -1,15 +1,16 @@
 [build]
-  command = ""
-  publish = "dist"                     # si tu build genera /dist en la raíz
+  command = "cd web && npm ci && npm run build"
+  publish = "web/dist"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  included_files = ["db/**", "shared/**"]
+  included_files = ["db/**", "shared/**"] # si tu API lee cosas de estas carpetas
 
+# (solo para desarrollo local con netlify dev + Vite corriendo en 5174)
 [dev]
 framework = "#custom"
-command = "npm run dev"               # ⬅️ SIN --prefix web
-targetPort = 5174                     # ⬅️ tu Vite corre aquí (lo has mostrado)
-port = 8889                           # ⬅️ usamos 8889 para evitar el 8888 ocupado
+command = "npm run dev --prefix web"
+targetPort = 5174
+port = 8889
 autoLaunch = false
