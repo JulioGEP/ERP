@@ -1,15 +1,14 @@
 [build]
-  command = ""         # no construyas frontend
-  publish = "."        # cualquier carpeta (no se usa)
+  command = ""
+  publish = "."
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# Solo para desarrollo local
 [dev]
 framework = "#custom"
-command = "npm run dev"
-targetPort = 5174
-port = 8889
+# no lanzamos Vite desde Netlify; ya lo arranca solo
+targetPort = 5173
+port = 9999
 autoLaunch = false
