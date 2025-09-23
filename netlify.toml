@@ -1,6 +1,15 @@
+[build]
+  command = ""
+  publish = "dist"                     # si tu build genera /dist en la raíz
+
 [functions]
   directory = "netlify/functions"
+  node_bundler = "esbuild"
+  included_files = ["db/**", "shared/**"]
 
-[[scheduled.functions]]
-  name = "syncDeals"
-  cron = "*/30 * * * *" # cada 30 minutos
+[dev]
+framework = "#custom"
+command = "npm run dev"               # ⬅️ SIN --prefix web
+targetPort = 5174                     # ⬅️ tu Vite corre aquí (lo has mostrado)
+port = 8889                           # ⬅️ usamos 8889 para evitar el 8888 ocupado
+autoLaunch = false
