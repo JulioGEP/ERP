@@ -5,12 +5,12 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  included_files = ["db/**", "shared/**"]
+  included_files = ["db/**", "shared/**"]  # si existen; si no, puedes quitar esta línea
 
-# Solo para desarrollo local con `netlify dev`
+# Solo para desarrollo local
 [dev]
 framework = "#custom"
 command = "npm run dev"
-targetPort = 5174   # puerto de Vite en local
-port = 8889         # puerto de Netlify Dev
+targetPort = 5174
+port = 8889
 autoLaunch = false
