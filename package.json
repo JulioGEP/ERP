@@ -3,22 +3,23 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
- "scripts": {
-  "dev": "vite",
-  "build": "vite build",
-  "preview": "vite preview",
-  "db:generate": "drizzle-kit generate:pg",
-  "db:migrate": "drizzle-kit migrate:pg"
-},
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "db:generate": "drizzle-kit generate:pg",
+    "db:migrate": "drizzle-kit migrate:pg"
+  },
   "dependencies": {
     "@fullcalendar/daygrid": "^6.1.15",
     "@fullcalendar/interaction": "^6.1.15",
     "@fullcalendar/list": "^6.1.15",
     "@fullcalendar/react": "^6.1.15",
-    "@netlify/functions": "^2.7.0",
     "@fullcalendar/timegrid": "^6.1.15",
+    "@netlify/functions": "^2.8.2",
     "@tanstack/react-query": "^5.45.1",
     "bootstrap": "^5.3.3",
+    "hono": "^4.9.8",
     "react": "^18.3.1",
     "react-bootstrap": "^2.10.4",
     "react-dom": "^18.3.1"
