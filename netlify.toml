@@ -1,11 +1,10 @@
 [build]
-  command = "npm ci && npm run build"
-  publish = "dist"
+  command = ""         # no construyas frontend
+  publish = "."        # cualquier carpeta (no se usa)
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  included_files = ["db/**", "shared/**"]  # si existen; si no, puedes quitar esta línea
 
 # Solo para desarrollo local
 [dev]
