@@ -1,16 +1,16 @@
 [build]
-  command = "cd web && npm ci && npm run build"
-  publish = "web/dist"
+  command = "npm ci && npm run build"
+  publish = "dist"
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  included_files = ["db/**", "shared/**"] # si tu API lee cosas de estas carpetas
+  included_files = ["db/**", "shared/**"]
 
-# (solo para desarrollo local con netlify dev + Vite corriendo en 5174)
+# Solo para desarrollo local con `netlify dev`
 [dev]
 framework = "#custom"
-command = "npm run dev --prefix web"
-targetPort = 5174
-port = 8889
+command = "npm run dev"
+targetPort = 5174   # puerto de Vite en local
+port = 8889         # puerto de Netlify Dev
 autoLaunch = false
