@@ -1,13 +1,6 @@
-[build]
-  command = "npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
+[functions]
+  directory = "netlify/functions"
 
-[dev]
-  command = "npm run dev"
-  port = 5173
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
+[[scheduled.functions]]
+  name = "syncDeals"
+  cron = "*/30 * * * *" # cada 30 minutos

@@ -1,50 +1,45 @@
-# GEP Group · Planificación
+# GEP App Starter (Netlify + Hono + Drizzle + Neon)
 
-ERP interno enfocado en la planificación de formaciones. Incluye la estructura base del frontend en React + TypeScript con Vite, estilos iniciales alineados con el branding de GEP Group, un calendario FullCalendar vacío y la vista de "Presupuestos" alimentada desde Pipedrive a través de una función serverless de Netlify.
+Arquitectura mínima para que puedas seguir trabajando con Codex sin depender de nadie.
 
-## Tecnologías principales
+## Requisitos
+- Node 18+
+- Cuenta Netlify + Netlify CLI (`npm i -g netlify-cli`)
+- Base de datos Postgres (Neon recomendado)
 
-- [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
-- [Vite](https://vitejs.dev/) como bundler
-- [Bootstrap 5](https://getbootstrap.com/) y [React Bootstrap](https://react-bootstrap.netlify.app/) para componentes UI
-- [FullCalendar](https://fullcalendar.io/) para la visualización del calendario
-- [@tanstack/react-query](https://tanstack.com/query/latest) para la gestión de datos asincrónicos
-- Netlify Functions para ocultar las credenciales y centralizar el acceso a Pipedrive
+## Pasos rápidos
+1. Copia `.env.example` a `.env` y rellena `DATABASE_URL`, `PIPEDRIVE_API_TOKEN`, etc.
+2. Instala deps: `npm i`
+3. Genera/Aplica esquema inicial (Drizzle):
+   - `npm run db:push`
+4. Arranca funciones en local:
+   - `npm run dev:functions`
+   - Endpoints: `http://localhost:8888/.netlify/functions/api/deals`
+5. Deploy en Netlify:
+   - `netlify deploy` (o `netlify init` primero)
 
-## Puesta en marcha
+## Endpoints v1
+- `GET /.netlify/functions/api/deals?page=1`
+- `POST /.netlify/functions/api/deals` `{ "title": "Curso Extinción X" }`
+- `GET /.netlify/functions/api/calendar/events?from=2025-09-01T00:00:00.000Z&to=2025-09-30T23:59:59.999Z`
+- `POST /.netlify/functions/api/notes`
 
-1. Instala las dependencias
-   ```bash
-   npm install
-   ```
-2. Define las variables de entorno necesarias (por ejemplo, en Netlify o un archivo `.env.local` si usas `netlify dev`):
-   ```bash
-   PIPEDRIVE_API_URL=https://api.pipedrive.com/v1
-   PIPEDRIVE_API_TOKEN=TU_TOKEN
-   ```
-3. Levanta el entorno de desarrollo con Vite:
-   ```bash
-   npm run dev
-   ```
-4. Opcionalmente, ejecuta la función serverless en local con [`netlify dev`](https://docs.netlify.com/cli/get-started/) para evitar problemas de CORS.
+## Sincronización Pipedrive (demo)
+- Función programada `syncDeals` cada 30 minutos (ver `netlify.toml`).
+- Implementa el upsert real por `pipedriveId` según tus campos.
 
-## Despliegue en Netlify
+## Estructura clave
+- `db/schema.ts` — Tablas (Drizzle)
+- `netlify/functions/api.ts` — Endpoints (Hono)
+- `adapters/pipedrive.ts` — Llamadas a Pipedrive
+- `openapi.yaml` — Contrato de API
 
-El archivo [`netlify/functions/deals.ts`](netlify/functions/deals.ts) expone el endpoint `/.netlify/functions/deals`, que devuelve los presupuestos del embudo 3, resolviendo el campo personalizado de "Sede" y filtrando los productos cuyo código comienza por `form-`.
+## Flujo sugerido (Codex-first)
+1. Cambios en `db/schema.ts` → `npm run db:push`
+2. Actualiza `openapi.yaml`
+3. Añade/ajusta handlers en `netlify/functions/api.ts`
+4. Prueba con Netlify Dev y React Query
 
-La configuración recomendada de Netlify es:
+---
 
-```toml
-[build]
-  command = "npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
-```
-
-## Próximos pasos sugeridos
-
-- Sincronizar eventos reales en el calendario a partir de las fechas planificadas.
-- Permitir que los usuarios asignen fechas desde la vista de "Presupuestos" y reflejarlo en Pipedrive.
-- Añadir filtros y búsqueda avanzada por cliente, sede o tipo de formación.
-- Integrar progresivamente las APIs de Holded y WooCommerce.
-- Incorporar la carga y gestión de documentación mediante Google Workspace.
+**Tip**: mantén los nombres simples y consistentes para que Codex te genere código que encaje a la primera.

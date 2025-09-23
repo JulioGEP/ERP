@@ -1,21 +1,16 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
+    "target": "ES2022",
     "module": "ESNext",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "skipLibCheck": true,
     "moduleResolution": "Bundler",
-    "allowSyntheticDefaultImports": true,
+    "outDir": "dist",
+    "rootDir": ".",
     "esModuleInterop": true,
-    "strict": true,
     "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "strict": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "types": ["node", "@netlify/functions"]
+    "types": ["node"]
   },
-  "include": ["src", "netlify/functions"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["netlify/functions/**/*.ts", "db/**/*.ts", "shared/**/*.ts", "adapters/**/*.ts"]
 }

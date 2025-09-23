@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: GEP App API
+  version: 1.0.0
+paths:
+  /deals:
+    get:
+      summary: List deals
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create manual deal
+      requestBody:
+        required: true
+      responses:
+        '201': { description: Created }
+  /calendar/events:
+    get:
+      summary: List events by time range
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+      responses:
+        '200': { description: OK }
+  /notes:
+    post:
+      summary: Create note
+      requestBody:
+        required: true
+      responses:
+        '201': { description: Created }
