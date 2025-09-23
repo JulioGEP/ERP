@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
  "scripts": {
-  "db:generate": "drizzle-kit generate",
-  "db:migrate": "drizzle-kit migrate"
+  "db:generate": "drizzle-kit generate:pg",
+  "db:migrate": "drizzle-kit migrate:pg"
 },
   "dependencies": {
     "@fullcalendar/daygrid": "^6.1.15",
