@@ -111,7 +111,7 @@ const hotelPernoctaSelectOptions = createYesNoOptions('Todas las opciones');
 
 const sedeSelectOptions: FilterOption[] = [
   { value: '', label: 'Todas las sedes' },
-  { value: 'GEP Madrid', label: 'GEP Madrid' },
+  { value: 'GEP Arganda', label: 'GEP Arganda' },
   { value: 'GEP Sabadell', label: 'GEP Sabadell' },
   { value: 'In Company', label: 'In Company' }
 ];
