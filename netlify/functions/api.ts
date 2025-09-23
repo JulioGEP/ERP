@@ -1,50 +1,42 @@
+import type { Handler } from "@netlify/functions";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { handle } from "hono/netlify";
-import { db } from "../../shared/db";
-import { deals, calendarEvents, notes } from "../../db/schema";
-import { and, gte, lte } from "drizzle-orm";
 
 const app = new Hono();
 app.use("*", cors());
 
-app.get("/deals", async (c) => {
-  const page = Number(c.req.query("page") ?? "1");
-  const limit = 50, offset = (page - 1) * limit;
-  const rows = await db.select().from(deals).limit(limit).offset(offset);
-  return c.json({ data: rows, page, limit });
-});
+// Health
+app.get("/health", (c) => c.json({ ok: true, at: new Date().toISOString() }));
 
-app.post("/deals", async (c) => {
-  const body = await c.req.json();
-  if (!body?.title) return c.text("title is required", 400);
-  const [row] = await db.insert(deals).values({
-    title: body.title,
-    orgId: body.orgId ?? null,
-    personId: body.personId ?? null,
-    pipeline: body.pipeline ?? null,
-    stage: body.stage ?? null,
-    value: body.value ?? null,
-    currency: body.currency ?? "EUR",
-    source: "manual"
-  }).returning();
-  return c.json({ data: row }, 201);
-});
+// Ejemplo GET /deals (sin BD aún)
+app.get("/deals", (c) => c.json({ data: [], page: 1, limit: 50 }));
 
-app.get("/calendar/events", async (c) => {
-  const from = c.req.query("from");
-  const to = c.req.query("to");
-  if (!from || !to) return c.text("from/to required (ISO)", 400);
-  const rows = await db.select().from(calendarEvents)
-    .where(and(gte(calendarEvents.startsAt, new Date(from)), lte(calendarEvents.endsAt, new Date(to))));
-  return c.json({ data: rows });
-});
+// Handler manual (evita el bug del adapter en Dev)
+export const handler: Handler = async (event) => {
+  const base = "http://localhost";
+  const suffix = event.path?.replace(/^\/\.netlify\/functions\/api/, "") || "";
+  const query = event.rawQuery
+    ? `?${event.rawQuery}`
+    : event.queryStringParameters
+    ? `?${new URLSearchParams(event.queryStringParameters as any).toString()}`
+    : "";
+  const url = `${base}/.netlify/functions/api${suffix}${query}`;
 
-app.post("/notes", async (c) => {
-  const body = await c.req.json();
-  if (!body?.entityType || !body?.entityId || !body?.body) return c.text("invalid", 400);
-  const [row] = await db.insert(notes).values(body).returning();
-  return c.json({ data: row }, 201);
-});
+  const req = new Request(url, {
+    method: event.httpMethod,
+    headers: event.headers as any,
+    body:
+      event.body && event.httpMethod !== "GET" && event.httpMethod !== "HEAD"
+        ? event.isBase64Encoded
+          ? Buffer.from(event.body, "base64")
+          : event.body
+        : undefined,
+  });
 
-export const handler = handle(app);
+  const res = await app.fetch(req);
+  const headers: Record<string, string> = {};
+  res.headers.forEach((v, k) => (headers[k] = v));
+  const body = await res.text();
+
+  return { statusCode: res.status, headers, body };
+};
