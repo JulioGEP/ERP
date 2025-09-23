@@ -1,0 +1,5 @@
+{
+  "name": "ERP GEP",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "postCreateCommand": "corepack enable && npm ci"
+}
