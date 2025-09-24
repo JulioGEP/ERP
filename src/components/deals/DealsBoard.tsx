@@ -647,6 +647,8 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
       return;
     }
 
+    const hadScheduledEvents = events.some((event) => event.dealId === dealId);
+
     setHiddenDealIds((previous) => {
       if (previous.includes(dealId)) {
         return previous;
@@ -663,9 +665,15 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
       return current.filter((item) => item.id !== dealId);
     });
 
+    if (hadScheduledEvents) {
+      onUpdateSchedule(dealId, []);
+    }
+
     setFeedback({
       type: 'success',
-      message: `Presupuesto #${dealId} eliminado de la lista.`
+      message: hadScheduledEvents
+        ? `Presupuesto #${dealId} eliminado de la lista y del calendario.`
+        : `Presupuesto #${dealId} eliminado de la lista.`
     });
   };
 
