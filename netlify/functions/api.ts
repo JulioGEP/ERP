@@ -662,6 +662,7 @@ const SINGLE_OPTION_SEDE_MAPPING: Record<string, string> = (() => {
 })();
 
 const SINGLE_OPTION_FIELD_IDS = {
+  pipelineId: "pipeline_id",
   caes: "e1971bf3a21d48737b682bf8d864ddc5eb15a351",
   fundae: "245d60d4d18aec40ba888998ef92e5d00e494583",
   hotelPernocta: "c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
@@ -1876,7 +1877,25 @@ const mapPipedriveDealToRecord = (
   const pipelineIdValue = findFirstValue(dealRecords, ["pipeline_id", "pipelineId", "pipeline.id"]);
   const pipelineId = toOptionalNumber(pipelineIdValue) ?? toOptionalNumber(deal["pipeline_id"]);
 
+  const rawPipelineSelection =
+    toOptionalFieldText(
+      findFirstValue(dealRecords, [
+        "pipeline",
+        "pipeline_id",
+        "pipelineId",
+        "pipeline.id",
+        SINGLE_OPTION_FIELD_IDS.pipelineId
+      ])
+    ) ?? (pipelineId != null ? String(pipelineId) : null);
+
+  const resolvedPipelineName = resolveSingleOptionFieldValue(
+    rawPipelineSelection,
+    SINGLE_OPTION_FIELD_IDS.pipelineId,
+    fieldOptions
+  );
+
   const pipelineName =
+    resolvedPipelineName ??
     toOptionalFieldText(findFirstValue(dealRecords, ["pipeline_name", "pipeline.name"])) ??
     readNestedString(deal["pipeline"], "name");
 
