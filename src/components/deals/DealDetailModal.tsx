@@ -660,24 +660,6 @@ const DealDetailModal = ({
     closeDocumentModal();
   }, [closeDocumentModal, isDocumentDirty]);
 
-  const handleScheduleModalCloseRequest = useCallback(() => {
-    if (hasScheduleChanges) {
-      setShowScheduleUnsavedConfirm(true);
-      return;
-    }
-
-    onHide();
-  }, [hasScheduleChanges, onHide]);
-
-  const handleKeepEditingSchedule = useCallback(() => {
-    setShowScheduleUnsavedConfirm(false);
-  }, []);
-
-  const handleConfirmScheduleDiscard = useCallback(() => {
-    setShowScheduleUnsavedConfirm(false);
-    onHide();
-  }, [onHide]);
-
   const eventsByKey = useMemo(() => {
     const map = new Map<string, CalendarEvent>();
     events
@@ -779,6 +761,24 @@ const DealDetailModal = ({
     [sessions, caesValue, fundaeValue, hotelPernoctaValue]
   );
   const hasScheduleChanges = currentScheduleSnapshot !== scheduleBaseline;
+
+  const handleScheduleModalCloseRequest = useCallback(() => {
+    if (hasScheduleChanges) {
+      setShowScheduleUnsavedConfirm(true);
+      return;
+    }
+
+    onHide();
+  }, [hasScheduleChanges, onHide]);
+
+  const handleKeepEditingSchedule = useCallback(() => {
+    setShowScheduleUnsavedConfirm(false);
+  }, []);
+
+  const handleConfirmScheduleDiscard = useCallback(() => {
+    setShowScheduleUnsavedConfirm(false);
+    onHide();
+  }, [onHide]);
 
   useEffect(() => {
     setSessions(initialSessions);
