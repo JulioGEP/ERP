@@ -15,6 +15,11 @@ type DealResponse = {
   related_objects?: unknown;
 };
 
+type DealFilesResponse = {
+  data?: unknown;
+  additional_data?: unknown;
+};
+
 type DealFieldResponse = {
   data?: unknown;
   additional_data?: {
@@ -128,6 +133,29 @@ const appendDealProducts = (
   mergeIntoRecordField(target, "related_objects", payload.related_objects);
 };
 
+const appendDealFiles = (
+  target: Record<string, unknown>,
+  payload: DealFilesResponse
+) => {
+  if (payload.data !== undefined) {
+    const data = payload.data;
+
+    const setIfEmpty = (key: string) => {
+      const current = target[key];
+      if (current === undefined || (Array.isArray(current) && current.length === 0)) {
+        target[key] = data;
+      }
+    };
+
+    setIfEmpty("files");
+    setIfEmpty("attachments");
+    setIfEmpty("deal_files");
+    setIfEmpty("dealFiles");
+  }
+
+  mergeIntoRecordField(target, "additional_data", payload.additional_data);
+};
+
 const fetchDealProducts = async (dealId: number): Promise<DealResponse | null> => {
   const url = new URL(`${BASE}/deals/${dealId}/products`);
   url.searchParams.set("api_token", TOKEN);
@@ -144,6 +172,26 @@ const fetchDealProducts = async (dealId: number): Promise<DealResponse | null> =
   }
 
   return (await res.json()) as DealResponse;
+};
+
+const fetchDealFiles = async (
+  dealId: number
+): Promise<DealFilesResponse | null> => {
+  const url = new URL(`${BASE}/files`);
+  url.searchParams.set("api_token", TOKEN);
+  url.searchParams.set("deal_id", String(dealId));
+
+  const res = await fetch(url);
+
+  if (res.status === 404) {
+    return null;
+  }
+
+  if (!res.ok) {
+    throw new Error(`Pipedrive error: ${res.status}`);
+  }
+
+  return (await res.json()) as DealFilesResponse;
 };
 
 export async function getDealById(dealId: number) {
@@ -188,6 +236,15 @@ export async function getDealById(dealId: number) {
     }
   } catch (error) {
     console.error(`No se pudieron obtener los productos del deal ${dealId} desde Pipedrive`, error);
+  }
+
+  try {
+    const filesPayload = await fetchDealFiles(dealId);
+    if (filesPayload) {
+      appendDealFiles(result, filesPayload);
+    }
+  } catch (error) {
+    console.error(`No se pudieron obtener los archivos del deal ${dealId} desde Pipedrive`, error);
   }
 
   return result;
