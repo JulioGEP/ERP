@@ -147,6 +147,25 @@ const computeEndFromStart = (start: string, hours: number | null): string => {
   return toDateTimeLocalString(date);
 };
 
+const computeSessionScheduleWarning = (start: string, end: string): string | null => {
+  if (!start || !end) {
+    return null;
+  }
+
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return null;
+  }
+
+  if (endDate.getTime() < startDate.getTime()) {
+    return 'La fecha de fin no puede ser anterior a la fecha de inicio. Por favor avisa al comercial.';
+  }
+
+  return null;
+};
+
 const formatDateLabel = (iso: string | null) => {
   if (!iso) {
     return 'Sin fecha';
@@ -671,6 +690,7 @@ const DealDetailModal = ({
   }, [initialSessions]);
 
   const [generalAttendees, setGeneralAttendees] = useState(initialGeneralAttendees);
+  const [sessionWarnings, setSessionWarnings] = useState<Record<string, string>>({});
 
   const blockedSelectionsBySession = useMemo(
     () => computeBlockedSelectionsBySession(sessions, events, deal.id),
@@ -696,6 +716,7 @@ const DealDetailModal = ({
 
   useEffect(() => {
     setSessions(initialSessions);
+    setSessionWarnings({});
   }, [initialSessions, show]);
 
   useEffect(() => {
@@ -831,7 +852,28 @@ const DealDetailModal = ({
     setSessions((previous) => previous.map((session) => ({ ...session, attendees: value })));
   };
 
+  const applySessionWarning = useCallback((key: string, warning: string | null) => {
+    setSessionWarnings((previous) => {
+      if (!warning) {
+        if (!(key in previous)) {
+          return previous;
+        }
+
+        const { [key]: _ignored, ...rest } = previous;
+        return rest;
+      }
+
+      if (previous[key] === warning) {
+        return previous;
+      }
+
+      return { ...previous, [key]: warning };
+    });
+  }, []);
+
   const handleSessionStartChange = (key: string, value: string) => {
+    let warning: string | null = null;
+
     setSessions((previous) =>
       previous.map((session) => {
         if (session.key !== key) {
@@ -850,23 +892,37 @@ const DealDetailModal = ({
           }
         }
 
+        warning = computeSessionScheduleWarning(updated.start, updated.end);
+
         return updated;
       })
     );
+
+    applySessionWarning(key, warning);
   };
 
   const handleSessionEndChange = (key: string, value: string) => {
+    let warning: string | null = null;
+
     setSessions((previous) =>
-      previous.map((session) =>
-        session.key === key
-          ? {
-              ...session,
-              end: value,
-              endTouched: value.trim().length > 0
-            }
-          : session
-      )
+      previous.map((session) => {
+        if (session.key !== key) {
+          return session;
+        }
+
+        const updated: SessionFormEntry = {
+          ...session,
+          end: value,
+          endTouched: value.trim().length > 0
+        };
+
+        warning = computeSessionScheduleWarning(updated.start, updated.end);
+
+        return updated;
+      })
     );
+
+    applySessionWarning(key, warning);
   };
 
   const handleSessionFieldChange = (key: string, field: keyof SessionFormEntry, value: string) => {
@@ -1057,6 +1113,21 @@ const DealDetailModal = ({
 
       if (!startIso || !endIso) {
         setSaveError('Las fechas introducidas no son válidas.');
+        return;
+      }
+
+      const startDate = new Date(startIso);
+      const endDate = new Date(endIso);
+
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        setSaveError('Las fechas introducidas no son válidas.');
+        return;
+      }
+
+      if (endDate.getTime() < startDate.getTime()) {
+        setSaveError(
+          'Hay sesiones donde la fecha de fin es anterior a la fecha de inicio. Por favor avisa al comercial.'
+        );
         return;
       }
 
@@ -1902,6 +1973,11 @@ const DealDetailModal = ({
                                           </Form.Group>
                                         </Col>
                                       </Row>
+                                      {sessionWarnings[session.key] && (
+                                        <Alert variant="warning" className="mb-0">
+                                          {sessionWarnings[session.key]}
+                                        </Alert>
+                                      )}
                                     </Stack>
                                   </Col>
                                 <Col xl={6}>
