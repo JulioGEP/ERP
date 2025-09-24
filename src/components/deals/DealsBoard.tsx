@@ -19,11 +19,13 @@ import {
   fetchSharedManualDeals,
   deleteDeal,
   DealRecord,
+  buildDealFormationLabels,
   countSessionsForProduct,
   loadHiddenDealIds,
   loadStoredManualDeals,
   persistHiddenDealIds,
-  persistStoredManualDeals
+  persistStoredManualDeals,
+  splitDealProductsByCode
 } from '../../services/deals';
 import DealDetailModal from './DealDetailModal';
 
@@ -305,7 +307,12 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
 
   const hasPendingSessions = useCallback(
     (deal: DealRecord) => {
-      for (const product of deal.trainingProducts) {
+      const { trainingProducts } = splitDealProductsByCode({
+        trainingProducts: deal.trainingProducts,
+        extraProducts: deal.extraProducts
+      });
+
+      for (const product of trainingProducts) {
         const sessionsCount = countSessionsForProduct(product);
 
         if (sessionsCount <= 0) {
@@ -362,6 +369,20 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
       (deal) => manualDealIds.has(deal.id) || hasPendingSessions(deal)
     );
   }, [data, manualDeals, hiddenDealIdSet, hasPendingSessions]);
+
+  const dealFormationMap = useMemo<Map<number, string[]>>(() => {
+    const map = new Map<number, string[]>();
+
+    dealsWithManual.forEach((deal) => {
+      const { trainingProducts } = splitDealProductsByCode({
+        trainingProducts: deal.trainingProducts,
+        extraProducts: deal.extraProducts
+      });
+      map.set(deal.id, buildDealFormationLabels(deal.formations, trainingProducts));
+    });
+
+    return map;
+  }, [dealsWithManual]);
 
   const availableTrainers = useMemo(() => {
     const values: string[] = [];
@@ -532,8 +553,10 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
           return deal.title ?? '';
         case 'clientName':
           return deal.clientName ?? fallbackClientName;
-        case 'formations':
-          return deal.formations.length > 0 ? deal.formations.join(' ') : fallbackFormationsLabel;
+        case 'formations': {
+          const formations = dealFormationMap.get(deal.id) ?? [];
+          return formations.length > 0 ? formations.join(' ') : fallbackFormationsLabel;
+        }
         case 'fundae':
           return deal.fundae ?? '';
         case 'caes':
@@ -556,7 +579,14 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
           return '';
       }
     },
-    [dealMobileUnitMap, dealTrainerMap, fallbackClientName, fallbackFormationsLabel, fallbackSede]
+    [
+      dealFormationMap,
+      dealMobileUnitMap,
+      dealTrainerMap,
+      fallbackClientName,
+      fallbackFormationsLabel,
+      fallbackSede
+    ]
   );
 
   const normalizedFilters = useMemo(
@@ -633,10 +663,12 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
           comparison = compareStrings(first.sede ?? fallbackSede, second.sede ?? fallbackSede);
           break;
         case 'formations': {
+          const firstFormations = dealFormationMap.get(first.id) ?? [];
+          const secondFormations = dealFormationMap.get(second.id) ?? [];
           const firstLabel =
-            first.formations.length > 0 ? first.formations.join(', ') : fallbackFormationsLabel;
+            firstFormations.length > 0 ? firstFormations.join(', ') : fallbackFormationsLabel;
           const secondLabel =
-            second.formations.length > 0 ? second.formations.join(', ') : fallbackFormationsLabel;
+            secondFormations.length > 0 ? secondFormations.join(', ') : fallbackFormationsLabel;
           comparison = compareStrings(firstLabel, secondLabel);
           break;
         }
@@ -652,7 +684,14 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     });
 
     return items;
-  }, [filteredDeals, sortConfig, fallbackClientName, fallbackFormationsLabel, fallbackSede]);
+  }, [
+    dealFormationMap,
+    filteredDeals,
+    sortConfig,
+    fallbackClientName,
+    fallbackFormationsLabel,
+    fallbackSede
+  ]);
 
   const handleSort = (field: SortField) => {
     setSortConfig((current) => {
@@ -966,45 +1005,49 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
                 {isLoading && skeletonRows}
 
                 {!isLoading && sortedDeals.length > 0 &&
-                  sortedDeals.map((deal) => (
-                    <tr
-                      key={deal.id}
-                      role="button"
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => handleSelectDeal(deal.id)}
-                    >
-                      <td className="fw-semibold text-primary">#{deal.id}</td>
-                      <td className="text-nowrap">{formatDealDate(deal.wonDate)}</td>
-                      <td>{deal.title}</td>
-                      <td>{deal.clientName ?? fallbackClientName}</td>
-                      <td>{deal.sede ?? fallbackSede}</td>
-                      <td>
-                        {deal.formations.length > 0 ? (
-                          <Stack direction="horizontal" gap={2} className="flex-wrap">
-                            {deal.formations.map((name) => (
-                              <Badge key={name} bg="info" text="dark" className="px-3 py-2 rounded-pill">
-                                {name}
-                              </Badge>
-                            ))}
-                          </Stack>
-                        ) : (
-                          <span className="text-muted">{fallbackFormationsLabel}</span>
-                        )}
-                      </td>
-                      <td className="text-end">
-                        <Button
-                          variant="outline-danger"
-                          size="sm"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleRemoveDeal(deal.id);
-                          }}
-                        >
-                          Eliminar
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  sortedDeals.map((deal) => {
+                    const formations = dealFormationMap.get(deal.id) ?? [];
+
+                    return (
+                      <tr
+                        key={deal.id}
+                        role="button"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => handleSelectDeal(deal.id)}
+                      >
+                        <td className="fw-semibold text-primary">#{deal.id}</td>
+                        <td className="text-nowrap">{formatDealDate(deal.wonDate)}</td>
+                        <td>{deal.title}</td>
+                        <td>{deal.clientName ?? fallbackClientName}</td>
+                        <td>{deal.sede ?? fallbackSede}</td>
+                        <td>
+                          {formations.length > 0 ? (
+                            <Stack direction="horizontal" gap={2} className="flex-wrap">
+                              {formations.map((name) => (
+                                <Badge key={name} bg="info" text="dark" className="px-3 py-2 rounded-pill">
+                                  {name}
+                                </Badge>
+                              ))}
+                            </Stack>
+                          ) : (
+                            <span className="text-muted">{fallbackFormationsLabel}</span>
+                          )}
+                        </td>
+                        <td className="text-end">
+                          <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleRemoveDeal(deal.id);
+                            }}
+                          >
+                            Eliminar
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </Table>
           </div>
