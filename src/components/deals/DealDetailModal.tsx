@@ -9,6 +9,7 @@ import InputGroup from 'react-bootstrap/InputGroup';
 import ListGroup from 'react-bootstrap/ListGroup';
 import Modal from 'react-bootstrap/Modal';
 import Row from 'react-bootstrap/Row';
+import Spinner from 'react-bootstrap/Spinner';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
 import { CalendarEvent } from '../../services/calendar';
@@ -440,6 +441,10 @@ const DealDetailModal = ({
   const [documentUrl, setDocumentUrl] = useState('');
   const [documentTarget, setDocumentTarget] = useState('general');
   const [documentError, setDocumentError] = useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<DisplayAttachment | null>(null);
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null);
+  const [attachmentPreviewError, setAttachmentPreviewError] = useState<string | null>(null);
+  const [attachmentPreviewLoading, setAttachmentPreviewLoading] = useState(false);
   const [showDocumentUnsavedConfirm, setShowDocumentUnsavedConfirm] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -449,6 +454,14 @@ const DealDetailModal = ({
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
   const [extraProductsExpanded, setExtraProductsExpanded] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (attachmentPreviewUrl) {
+        URL.revokeObjectURL(attachmentPreviewUrl);
+      }
+    };
+  }, [attachmentPreviewUrl]);
 
   const productMap = useMemo(() => {
     const byDealProductId = new Map<number, string>();
@@ -888,6 +901,60 @@ const DealDetailModal = ({
   const persistExtras = (notes: StoredDealNote[], documents: StoredDealDocument[]) => {
     persistDealExtras(deal.id, { notes, documents });
   };
+
+  const releaseAttachmentPreviewUrl = useCallback(() => {
+    setAttachmentPreviewUrl((previous) => {
+      if (previous) {
+        URL.revokeObjectURL(previous);
+      }
+
+      return null;
+    });
+  }, []);
+
+  const handleCloseAttachmentPreview = useCallback(() => {
+    setPreviewAttachment(null);
+    setAttachmentPreviewError(null);
+    setAttachmentPreviewLoading(false);
+    releaseAttachmentPreviewUrl();
+  }, [releaseAttachmentPreviewUrl]);
+
+  const handleViewAttachment = useCallback(
+    async (attachment: DisplayAttachment) => {
+      setPreviewAttachment(attachment);
+      setAttachmentPreviewError(null);
+      setAttachmentPreviewLoading(true);
+      releaseAttachmentPreviewUrl();
+
+      const sourceUrl = attachment.downloadUrl ?? attachment.url;
+
+      if (!sourceUrl) {
+        setAttachmentPreviewLoading(false);
+        setAttachmentPreviewError('No se pudo obtener la URL del documento.');
+        return;
+      }
+
+      try {
+        const response = await fetch(sourceUrl);
+
+        if (!response.ok) {
+          throw new Error(`Error al descargar el documento: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        setAttachmentPreviewUrl(objectUrl);
+      } catch (error) {
+        console.error('No se pudo cargar el documento del presupuesto', error);
+        setAttachmentPreviewError(
+          'No se pudo cargar el documento. Puedes intentar descargarlo directamente.'
+        );
+      } finally {
+        setAttachmentPreviewLoading(false);
+      }
+    },
+    [releaseAttachmentPreviewUrl]
+  );
 
   const handleSaveSchedule = () => {
     if (isBusy) {
@@ -1528,28 +1595,14 @@ const DealDetailModal = ({
                                     </td>
                                     <td className="text-muted">{renderAttachmentOrigin(attachment)}</td>
                                     <td className="text-end">
-                                      <Stack direction="horizontal" gap={2} className="justify-content-end">
-                                        <Button
-                                          as="a"
-                                          variant="link"
-                                          size="sm"
-                                          href={attachment.url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                        >
-                                          Ver
-                                        </Button>
-                                        <Button
-                                          as="a"
-                                          variant="link"
-                                          size="sm"
-                                          href={attachment.downloadUrl ?? attachment.url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                        >
-                                          Descargar
-                                        </Button>
-                                      </Stack>
+                                      <Button
+                                        variant="link"
+                                        size="sm"
+                                        className="px-0"
+                                        onClick={() => handleViewAttachment(attachment)}
+                                      >
+                                        Ver
+                                      </Button>
                                     </td>
                                   </tr>
                                 ))}
@@ -2099,6 +2152,73 @@ const DealDetailModal = ({
           <Button variant="primary" onClick={handleConfirmDocumentSave}>
             Guardar y cerrar
           </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal
+        show={previewAttachment !== null}
+        onHide={handleCloseAttachmentPreview}
+        size="xl"
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>{previewAttachment?.name ?? 'Documento'}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {attachmentPreviewError ? (
+            <Alert
+              variant="danger"
+              onClose={() => setAttachmentPreviewError(null)}
+              dismissible
+              className="mb-3"
+            >
+              {attachmentPreviewError}
+            </Alert>
+          ) : null}
+          {attachmentPreviewLoading ? (
+            <div className="d-flex flex-column align-items-center justify-content-center py-5">
+              <Spinner animation="border" role="status">
+                <span className="visually-hidden">Cargando…</span>
+              </Spinner>
+              <div className="mt-3 text-muted">Cargando documento…</div>
+            </div>
+          ) : attachmentPreviewUrl ? (
+            <div className="border rounded overflow-hidden" style={{ minHeight: '60vh' }}>
+              <iframe
+                title={`Vista previa de ${previewAttachment?.name ?? 'documento'}`}
+                src={attachmentPreviewUrl}
+                className="w-100 h-100 border-0"
+                allowFullScreen
+              />
+            </div>
+          ) : previewAttachment && !attachmentPreviewError ? (
+            <div className="text-muted">El documento no está disponible.</div>
+          ) : null}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseAttachmentPreview}>
+            Cerrar
+          </Button>
+          {attachmentPreviewUrl ? (
+            <Button
+              as="a"
+              href={attachmentPreviewUrl}
+              download={previewAttachment?.name || undefined}
+              variant="primary"
+            >
+              Descargar
+            </Button>
+          ) : previewAttachment?.downloadUrl || previewAttachment?.url ? (
+            <Button
+              as="a"
+              href={previewAttachment.downloadUrl ?? previewAttachment.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="primary"
+            >
+              Descargar
+            </Button>
+          ) : null}
         </Modal.Footer>
       </Modal>
 
