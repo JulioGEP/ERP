@@ -706,40 +706,169 @@ const registerDealFieldOptionKey = (
 const extractSingleOptionFieldOptions = (
   fields: Record<string, unknown>[]
 ): SingleOptionFieldOptions => {
-  const targets = new Set<string>(Object.values(SINGLE_OPTION_FIELD_IDS));
-  const options: SingleOptionFieldOptions = {};
+  const targetLookup = new Map<string, string>();
 
-  fields.forEach((field) => {
-    const key = typeof field.key === "string" ? field.key : null;
-
-    if (!key || !targets.has(key)) {
+  const registerTargetIdentifier = (candidate: unknown, identifier: string) => {
+    if (typeof candidate !== "string") {
       return;
     }
 
-    const fieldOptions = Array.isArray(field.options) ? field.options : [];
-    const optionMap: Record<string, string> = {};
+    const trimmed = candidate.trim();
+
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    targetLookup.set(trimmed, identifier);
+    targetLookup.set(normaliseComparisonText(trimmed), identifier);
+  };
+
+  Object.entries(SINGLE_OPTION_FIELD_IDS).forEach(([alias, identifier]) => {
+    if (typeof identifier !== "string") {
+      return;
+    }
+
+    registerTargetIdentifier(identifier, identifier);
+    registerTargetIdentifier(alias, identifier);
+
+    const snakeCaseAlias = alias.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
+    registerTargetIdentifier(snakeCaseAlias, identifier);
+    registerTargetIdentifier(snakeCaseAlias.replace(/_/g, " "), identifier);
+  });
+
+  const options: SingleOptionFieldOptions = {};
+
+  const collectFieldIdentifiers = (record: Record<string, unknown>): string[] => {
+    const identifiers = new Set<string>();
+
+    const register = (value: unknown) => {
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+
+        if (trimmed.length === 0) {
+          return;
+        }
+
+        identifiers.add(trimmed);
+        identifiers.add(normaliseComparisonText(trimmed));
+        return;
+      }
+
+      if (typeof value === "number" && Number.isFinite(value)) {
+        const text = String(value);
+        identifiers.add(text);
+        identifiers.add(normaliseComparisonText(text));
+      }
+    };
+
+    register(record.key);
+    register(record.id);
+    register(record.field_key);
+    register((record as Record<string, unknown>)["fieldKey"]);
+    register(record.name);
+    register(record.label);
+    register(record.title);
+
+    return Array.from(identifiers);
+  };
+
+  const registerOptionMapAliases = (
+    optionMap: Record<string, string>,
+    identifiers: string[]
+  ) => {
+    identifiers.forEach((identifier) => {
+      const trimmed = identifier.trim();
+
+      if (trimmed.length === 0) {
+        return;
+      }
+
+      options[trimmed] = optionMap;
+      options[normaliseComparisonText(trimmed)] = optionMap;
+    });
+  };
+
+  fields.forEach((field) => {
+    if (!field || typeof field !== "object" || Array.isArray(field)) {
+      return;
+    }
+
+    const record = field as Record<string, unknown>;
+    const identifiers = collectFieldIdentifiers(record);
+
+    let matchedKey: string | null = null;
+
+    for (const identifier of identifiers) {
+      const trimmed = identifier.trim();
+
+      if (trimmed.length === 0) {
+        continue;
+      }
+
+      const targetIdentifier =
+        targetLookup.get(trimmed) ?? targetLookup.get(normaliseComparisonText(trimmed));
+
+      if (targetIdentifier) {
+        matchedKey = targetIdentifier;
+        break;
+      }
+    }
+
+    if (!matchedKey) {
+      return;
+    }
+
+    const fieldOptions = Array.isArray(record.options) ? record.options : [];
+    const optionMap: Record<string, string> = options[matchedKey] ?? {};
 
     fieldOptions.forEach((option) => {
       if (!option || typeof option !== "object") {
         return;
       }
 
-      const record = option as Record<string, unknown>;
-      const label = typeof record.label === "string" ? record.label.trim() : null;
+      const optionRecord = option as Record<string, unknown>;
+      const label =
+        typeof optionRecord.label === "string" ? optionRecord.label.trim() : null;
 
       if (!label || label.length === 0) {
         return;
       }
 
-      registerDealFieldOptionKey(optionMap, record.id, label);
-      registerDealFieldOptionKey(optionMap, record.value, label);
-      registerDealFieldOptionKey(optionMap, record.key, label);
+      registerDealFieldOptionKey(optionMap, optionRecord.id, label);
+      registerDealFieldOptionKey(optionMap, optionRecord.value, label);
+      registerDealFieldOptionKey(optionMap, optionRecord.key, label);
     });
 
-    options[key] = optionMap;
+    options[matchedKey] = optionMap;
+    registerOptionMapAliases(optionMap, identifiers);
   });
 
   return options;
+};
+
+const findSingleOptionFieldMap = (
+  options: SingleOptionFieldOptions,
+  fieldId: string
+): Record<string, string> | null => {
+  if (typeof fieldId !== "string") {
+    return null;
+  }
+
+  const direct = options[fieldId];
+
+  if (direct) {
+    return direct;
+  }
+
+  const trimmed = fieldId.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  return (
+    options[trimmed] ?? options[normaliseComparisonText(trimmed)] ?? null
+  );
 };
 
 const shouldUseCachedDealFieldOptions = (entry: DealFieldOptionsCacheEntry | null): boolean => {
@@ -809,7 +938,7 @@ const resolveSingleOptionFieldValue = (
     return null;
   }
 
-  const fieldOptions = options[fieldId];
+  const fieldOptions = findSingleOptionFieldMap(options, fieldId);
 
   if (!fieldOptions) {
     return trimmed;
