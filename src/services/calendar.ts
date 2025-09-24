@@ -122,10 +122,7 @@ export interface CalendarEvent {
   manualState: SessionManualState;
 }
 
-const STORAGE_KEY = 'erp-calendar-events-v1';
 const CALENDAR_ENDPOINT = '/.netlify/functions/api/calendar-events';
-
-const isBrowser = typeof window !== 'undefined';
 
 type StoredCalendarEvent = Partial<CalendarEvent> & { id: string; dealId: number };
 
@@ -239,40 +236,8 @@ const isCompleteCalendarEvent = (event: CalendarEvent): boolean => {
 const sanitizeEventsForStorage = (events: CalendarEvent[]): CalendarEvent[] =>
   events.filter(isCompleteCalendarEvent);
 
-const persistEventsLocally = (events: CalendarEvent[]) => {
-  if (!isBrowser) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-  } catch (error) {
-    console.error('No se pudieron guardar los eventos del calendario en el almacenamiento local', error);
-  }
-};
-
-export const loadCalendarEvents = (): CalendarEvent[] => {
-  if (!isBrowser) {
-    return [];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-
-    const parsed: unknown = JSON.parse(raw);
-    return normaliseCalendarCollection(parsed);
-  } catch (error) {
-    console.error('No se pudieron cargar los eventos del calendario desde el almacenamiento local', error);
-    return [];
-  }
-};
-
 export const persistCalendarEvents = async (events: CalendarEvent[]) => {
   const sanitizedEvents = sanitizeEventsForStorage(events);
-  persistEventsLocally(sanitizedEvents);
 
   try {
     const response = await fetch(CALENDAR_ENDPOINT, {
@@ -290,7 +255,7 @@ export const persistCalendarEvents = async (events: CalendarEvent[]) => {
   }
 };
 
-export const fetchSharedCalendarEvents = async (): Promise<CalendarEvent[]> => {
+export const fetchSharedCalendarEvents = async (): Promise<CalendarEvent[] | null> => {
   try {
     const response = await fetch(CALENDAR_ENDPOINT);
 
@@ -301,10 +266,9 @@ export const fetchSharedCalendarEvents = async (): Promise<CalendarEvent[]> => {
 
     const payload = (await response.json()) as { events?: unknown };
     const events = normaliseCalendarCollection(payload.events);
-    persistEventsLocally(events);
     return events;
   } catch (error) {
     console.error('No se pudieron cargar los eventos del calendario desde el servidor compartido', error);
-    return loadCalendarEvents();
+    return null;
   }
 };

@@ -5,12 +5,7 @@ import Modal from 'react-bootstrap/Modal';
 import Stack from 'react-bootstrap/Stack';
 import DealDetailModal from './components/deals/DealDetailModal';
 import HeaderBar from './components/layout/HeaderBar';
-import {
-  CalendarEvent,
-  fetchSharedCalendarEvents,
-  loadCalendarEvents,
-  persistCalendarEvents
-} from './services/calendar';
+import { CalendarEvent, fetchSharedCalendarEvents, persistCalendarEvents } from './services/calendar';
 import { fetchDealById, DealRecord } from './services/deals';
 import './App.scss';
 
@@ -23,7 +18,10 @@ type CalendarModalStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('calendar');
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(() => loadCalendarEvents());
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const hasLoadedInitialEventsRef = useRef(false);
+  const hasUserModifiedEventsRef = useRef(false);
+  const calendarEventsRef = useRef<CalendarEvent[]>([]);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [calendarModalStatus, setCalendarModalStatus] = useState<CalendarModalStatus>('idle');
   const [selectedCalendarDealId, setSelectedCalendarDealId] = useState<number | null>(null);
@@ -33,6 +31,12 @@ const App = () => {
   const activeDealRequestRef = useRef<number | null>(null);
 
   useEffect(() => {
+    calendarEventsRef.current = calendarEvents;
+
+    if (!hasLoadedInitialEventsRef.current) {
+      return;
+    }
+
     void persistCalendarEvents(calendarEvents);
   }, [calendarEvents]);
 
@@ -46,7 +50,18 @@ const App = () => {
         return;
       }
 
-      setCalendarEvents(remoteEvents);
+      hasLoadedInitialEventsRef.current = true;
+
+      if (hasUserModifiedEventsRef.current) {
+        void persistCalendarEvents(calendarEventsRef.current);
+        hasUserModifiedEventsRef.current = false;
+        return;
+      }
+
+      if (remoteEvents) {
+        hasUserModifiedEventsRef.current = false;
+        setCalendarEvents(remoteEvents);
+      }
     };
 
     void synchronizeCalendar();
@@ -56,7 +71,10 @@ const App = () => {
     };
   }, []);
 
+
   const handleUpdateSchedule = (dealId: number, events: CalendarEvent[]) => {
+    hasUserModifiedEventsRef.current = true;
+
     setCalendarEvents((previous) => {
       const filtered = previous.filter((event) => event.dealId !== dealId);
       return [...filtered, ...events];
