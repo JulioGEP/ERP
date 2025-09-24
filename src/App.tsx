@@ -80,7 +80,7 @@ const App = () => {
       }
 
       try {
-        const deal = await fetchDealById(dealId);
+        const deal = await fetchDealById(dealId, { refresh: shouldForceRefresh });
 
         if (activeDealRequestRef.current !== dealId) {
           return;
@@ -140,7 +140,7 @@ const App = () => {
       throw new Error('No hay un presupuesto seleccionado para actualizar.');
     }
 
-    const refreshed = await fetchDealById(selectedCalendarDealId);
+    const refreshed = await fetchDealById(selectedCalendarDealId, { refresh: true });
     dealCacheRef.current = { ...dealCacheRef.current, [selectedCalendarDealId]: refreshed };
     setSelectedCalendarDeal(refreshed);
   }, [selectedCalendarDealId]);
