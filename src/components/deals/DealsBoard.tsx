@@ -16,6 +16,7 @@ import {
   fetchDealById,
   fetchDeals,
   DealRecord,
+  countSessionsForProduct,
   loadHiddenDealIds,
   loadStoredManualDeals,
   persistHiddenDealIds,
@@ -146,6 +147,20 @@ const buildUniqueList = (values: string[]): string[] => {
   return Array.from(map.values());
 };
 
+const buildSessionKey = (dealId: number, dealProductId: number, sessionIndex: number) =>
+  `${dealId}-${dealProductId}-${sessionIndex}`;
+
+const isEventComplete = (event: CalendarEvent | undefined): boolean => {
+  if (!event) {
+    return false;
+  }
+
+  const start = typeof event.start === 'string' ? event.start.trim() : '';
+  const end = typeof event.end === 'string' ? event.end.trim() : '';
+
+  return start.length > 0 && end.length > 0;
+};
+
 interface DealsBoardProps {
   events: CalendarEvent[];
   onUpdateSchedule: (dealId: number, events: CalendarEvent[]) => void;
@@ -228,6 +243,41 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
 
   const hiddenDealIdSet = useMemo(() => new Set(hiddenDealIds), [hiddenDealIds]);
 
+  const scheduledSessionsByKey = useMemo(() => {
+    const map = new Map<string, CalendarEvent>();
+
+    events.forEach((event) => {
+      const key = buildSessionKey(event.dealId, event.dealProductId, event.sessionIndex);
+      map.set(key, event);
+    });
+
+    return map;
+  }, [events]);
+
+  const hasPendingSessions = useCallback(
+    (deal: DealRecord) => {
+      for (const product of deal.trainingProducts) {
+        const sessionsCount = countSessionsForProduct(product);
+
+        if (sessionsCount <= 0) {
+          continue;
+        }
+
+        for (let index = 0; index < sessionsCount; index += 1) {
+          const key = buildSessionKey(deal.id, product.dealProductId, index);
+          const event = scheduledSessionsByKey.get(key);
+
+          if (!isEventComplete(event)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    },
+    [scheduledSessionsByKey]
+  );
+
   const dealsWithManual = useMemo<DealRecord[]>(() => {
     const map = new Map<number, DealRecord>();
 
@@ -243,8 +293,8 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
       }
     });
 
-    return Array.from(map.values());
-  }, [data, manualDeals, hiddenDealIdSet]);
+    return Array.from(map.values()).filter((deal) => hasPendingSessions(deal));
+  }, [data, manualDeals, hiddenDealIdSet, hasPendingSessions]);
 
   const availableTrainers = useMemo(() => {
     const values: string[] = [];
