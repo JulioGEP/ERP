@@ -5,7 +5,12 @@ import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import { desc, eq, sql } from "drizzle-orm";
 import { pipedriveDeals, sharedState } from "../../db/schema";
-import { getDealById, listDealFields, listDealsUpdatedDesc } from "../../adapters/pipedrive";
+import {
+  getDealById,
+  listDealFields,
+  listDealsUpdatedDesc,
+  listPipelines
+} from "../../adapters/pipedrive";
 
 type DealNote = {
   id: string;
@@ -913,9 +918,86 @@ const shouldUseCachedDealFieldOptions = (entry: DealFieldOptionsCacheEntry | nul
   return Date.now() - timestamp < DEAL_FIELD_OPTIONS_TTL_MS;
 };
 
+const registerPipelineOptionAliases = (
+  options: SingleOptionFieldOptions,
+  optionMap: Record<string, string>
+) => {
+  const identifiers = [
+    SINGLE_OPTION_FIELD_IDS.pipelineId,
+    "pipelineId",
+    "pipeline_id",
+    "pipeline id",
+    "pipeline",
+    "embudo",
+    "tipo de formación",
+    "tipo formacion",
+    "tipo_formacion"
+  ];
+
+  identifiers.forEach((identifier) => {
+    if (typeof identifier !== "string") {
+      return;
+    }
+
+    const trimmed = identifier.trim();
+
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    options[trimmed] = optionMap;
+    options[normaliseComparisonText(trimmed)] = optionMap;
+  });
+};
+
 const fetchDealFieldOptions = async (): Promise<SingleOptionFieldOptions> => {
   const fields = await listDealFields();
-  return extractSingleOptionFieldOptions(fields);
+  const options = extractSingleOptionFieldOptions(fields);
+
+  const pipelineOptionMap: Record<string, string> =
+    options[SINGLE_OPTION_FIELD_IDS.pipelineId] ?? {};
+
+  let shouldRegisterPipelineAliases =
+    options[SINGLE_OPTION_FIELD_IDS.pipelineId] !== undefined;
+
+  try {
+    const pipelines = await listPipelines();
+
+    pipelines.forEach((pipeline) => {
+      if (!pipeline || typeof pipeline !== "object" || Array.isArray(pipeline)) {
+        return;
+      }
+
+      const record = pipeline as Record<string, unknown>;
+      const label =
+        toOptionalString(record.name) ??
+        toOptionalString(record.label) ??
+        toOptionalString(record.title);
+
+      if (!label) {
+        return;
+      }
+
+      registerDealFieldOptionKey(pipelineOptionMap, record.id, label);
+      registerDealFieldOptionKey(pipelineOptionMap, record["pipeline_id"], label);
+      registerDealFieldOptionKey(pipelineOptionMap, record["pipelineId"], label);
+      registerDealFieldOptionKey(pipelineOptionMap, record["value"], label);
+      registerDealFieldOptionKey(pipelineOptionMap, record["key"], label);
+    });
+
+    if (Object.keys(pipelineOptionMap).length > 0) {
+      options[SINGLE_OPTION_FIELD_IDS.pipelineId] = pipelineOptionMap;
+      shouldRegisterPipelineAliases = true;
+    }
+  } catch (error) {
+    console.error("No se pudieron cargar los embudos de Pipedrive", error);
+  }
+
+  if (shouldRegisterPipelineAliases && Object.keys(pipelineOptionMap).length > 0) {
+    registerPipelineOptionAliases(options, pipelineOptionMap);
+  }
+
+  return options;
 };
 
 const loadDealFieldOptions = async (): Promise<SingleOptionFieldOptions> => {
