@@ -70,26 +70,72 @@ type DisplayNote = DealNote & { shareWithTrainer?: boolean | null };
 type DisplayAttachment = DealAttachment;
 type ShareWithTrainerOption = 'yes' | 'no';
 
-const extractNotePreview = (content: string): { preview: string; truncated: boolean } => {
+const normaliseNotePlainText = (value: string): string =>
+  value
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+
+const convertNoteContentToPlainText = (content: string): string => {
   const trimmed = content.trim();
 
   if (!trimmed) {
+    return '';
+  }
+
+  const withBreaks = trimmed
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/\s*div\s*>/gi, '\n')
+    .replace(/<\s*div[^>]*>/gi, '\n')
+    .replace(/<\s*\/\s*p\s*>/gi, '\n')
+    .replace(/<\s*p[^>]*>/gi, '\n')
+    .replace(/<\s*\/\s*li\s*>/gi, '\n')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/<[^>]+>/g, ' ');
+
+  if (typeof document !== 'undefined') {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = withBreaks;
+    return normaliseNotePlainText(textarea.value);
+  }
+
+  return normaliseNotePlainText(withBreaks);
+};
+
+const extractNoteLines = (content: string): string[] => {
+  const plain = convertNoteContentToPlainText(content);
+
+  if (!plain) {
+    return [];
+  }
+
+  return plain.split('\n');
+};
+
+const extractNotePreview = (content: string): { preview: string; truncated: boolean } => {
+  const plainText = convertNoteContentToPlainText(content);
+
+  if (!plainText) {
     return { preview: 'Sin contenido', truncated: false };
   }
 
   const sentenceSeparator = /(?<=[.!?])\s+/u;
-  const sentences = trimmed.split(sentenceSeparator);
+  const sentences = plainText.split(sentenceSeparator);
 
   if (sentences.length > 1) {
     return { preview: sentences[0].trim(), truncated: true };
   }
 
-  const firstLineBreak = trimmed.indexOf('\n');
+  const firstLineBreak = plainText.indexOf('\n');
   if (firstLineBreak >= 0) {
-    return { preview: trimmed.slice(0, firstLineBreak).trim(), truncated: true };
+    return { preview: plainText.slice(0, firstLineBreak).trim(), truncated: true };
   }
 
-  return { preview: trimmed, truncated: false };
+  return { preview: plainText, truncated: false };
 };
 
 const generateId = () =>
@@ -1362,6 +1408,7 @@ const DealDetailModal = ({
       ? 'Editar nota'
       : 'Añadir nota';
   const noteSubmitLabel = isEditingNote ? 'Guardar cambios' : 'Guardar nota';
+  const noteDisplayText = isViewingNote ? convertNoteContentToPlainText(noteText) : noteText;
 
   const handleAddDocument = (): boolean => {
     const trimmedName = documentName.trim();
@@ -1741,6 +1788,7 @@ const DealDetailModal = ({
                             <ListGroup variant="flush" className="border rounded">
                               {combinedNotes.map((note) => {
                                 const { preview, truncated } = extractNotePreview(note.content);
+                                const fullContent = convertNoteContentToPlainText(note.content);
                                 return (
                                   <ListGroup.Item
                                     key={note.id}
@@ -1748,7 +1796,10 @@ const DealDetailModal = ({
                                     action
                                     onClick={() => handleOpenExistingNoteModal(note)}
                                   >
-                                    <div className="fw-semibold mb-1" title={note.content}>
+                                    <div
+                                      className="fw-semibold mb-1"
+                                      title={fullContent || undefined}
+                                    >
                                       {truncated ? `${preview}…` : preview}
                                     </div>
                                     <div className="small text-muted d-flex flex-wrap gap-3">
@@ -1885,9 +1936,23 @@ const DealDetailModal = ({
                                     <td>
                                       {product.notes.length > 0 ? (
                                         <ul className="mb-0 ps-3">
-                                          {product.notes.map((note) => (
-                                            <li key={`extra-note-${note.id}`}>{note.content}</li>
-                                          ))}
+                                          {product.notes.map((note) => {
+                                            const lines = extractNoteLines(note.content);
+                                            return (
+                                              <li key={`extra-note-${note.id}`}>
+                                                {lines.length > 0 ? (
+                                                  lines.map((line, index) => (
+                                                    <span key={`extra-note-${note.id}-line-${index}`}>
+                                                      {line}
+                                                      {index < lines.length - 1 ? <br /> : null}
+                                                    </span>
+                                                  ))
+                                                ) : (
+                                                  <span className="text-muted">Sin contenido</span>
+                                                )}
+                                              </li>
+                                            );
+                                          })}
                                         </ul>
                                       ) : (
                                         <span className="text-muted">Sin notas</span>
@@ -2277,7 +2342,7 @@ const DealDetailModal = ({
             <Stack gap={3}>
               <div>
                 <div className="text-uppercase text-muted small mb-1">Contenido</div>
-                <div style={{ whiteSpace: 'pre-wrap' }}>{noteText || 'Sin contenido'}</div>
+                <div style={{ whiteSpace: 'pre-line' }}>{noteDisplayText || 'Sin contenido'}</div>
               </div>
               {activeNote ? (
                 <div className="small text-muted d-flex flex-wrap gap-3">
