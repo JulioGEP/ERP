@@ -15,6 +15,67 @@ type DealResponse = {
   related_objects?: unknown;
 };
 
+type DealFieldResponse = {
+  data?: unknown;
+  additional_data?: {
+    pagination?: {
+      more_items_in_collection?: boolean;
+      start?: number;
+      limit?: number;
+      next_start?: number;
+    };
+  };
+};
+
+export async function listDealFields() {
+  const accumulated: Record<string, unknown>[] = [];
+
+  let hasMore = true;
+  let start = 0;
+
+  while (hasMore) {
+    const url = new URL(`${BASE}/dealFields`);
+    url.searchParams.set("api_token", TOKEN);
+    url.searchParams.set("start", String(start));
+
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      throw new Error(`Pipedrive error: ${res.status}`);
+    }
+
+    const payload = (await res.json()) as DealFieldResponse;
+
+    const pageData = Array.isArray(payload.data) ? payload.data : [];
+
+    pageData.forEach((field) => {
+      if (field && typeof field === "object" && !Array.isArray(field)) {
+        accumulated.push(field as Record<string, unknown>);
+      }
+    });
+
+    const pagination = payload.additional_data?.pagination;
+
+    if (pagination?.more_items_in_collection) {
+      if (typeof pagination.next_start === "number") {
+        start = pagination.next_start;
+      } else if (typeof pagination.limit === "number") {
+        start += pagination.limit;
+      } else {
+        if (pageData.length === 0) {
+          hasMore = false;
+        } else {
+          start += pageData.length;
+        }
+      }
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return accumulated;
+}
+
 const PRODUCT_KEYS = [
   "products",
   "product_items",

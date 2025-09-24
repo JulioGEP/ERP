@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import { desc, eq, sql } from "drizzle-orm";
 import { pipedriveDeals, sharedState } from "../../db/schema";
-import { getDealById, listDealsUpdatedDesc } from "../../adapters/pipedrive";
+import { getDealById, listDealFields, listDealsUpdatedDesc } from "../../adapters/pipedrive";
 
 type DealNote = {
   id: string;
@@ -474,7 +474,8 @@ const SHARED_STATE_KEYS = {
   calendarEvents: "calendar-events",
   manualDeals: "manual-deals",
   hiddenDeals: "hidden-deals",
-  dealExtras: "deal-extras"
+  dealExtras: "deal-extras",
+  dealFieldOptions: "deal-field-options"
 } as const;
 
 const parseBooleanFlag = (value: string | null): boolean => {
@@ -660,6 +661,164 @@ const SINGLE_OPTION_SEDE_MAPPING: Record<string, string> = (() => {
   return mapping;
 })();
 
+const SINGLE_OPTION_FIELD_IDS = {
+  caes: "e1971bf3a21d48737b682bf8d864ddc5eb15a351",
+  fundae: "245d60d4d18aec40ba888998ef92e5d00e494583",
+  hotelPernocta: "c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
+  sede: "676d6bd51e52999c582c01f67c99a35ed30bf6ae"
+} as const;
+
+type SingleOptionFieldOptions = Record<string, Record<string, string>>;
+
+type DealFieldOptionsCacheEntry = {
+  options: SingleOptionFieldOptions;
+  fetchedAt: string;
+};
+
+const DEAL_FIELD_OPTIONS_TTL_MS = 1000 * 60 * 60 * 6; // 6 horas
+
+let inMemoryDealFieldOptions: DealFieldOptionsCacheEntry | null = null;
+
+const registerDealFieldOptionKey = (
+  target: Record<string, string>,
+  key: unknown,
+  label: string
+) => {
+  if (typeof key === "number" && Number.isFinite(key)) {
+    const text = String(key);
+    target[text] = label;
+    target[normaliseComparisonText(text)] = label;
+    return;
+  }
+
+  if (typeof key === "string") {
+    const trimmed = key.trim();
+
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    target[trimmed] = label;
+    target[normaliseComparisonText(trimmed)] = label;
+  }
+};
+
+const extractSingleOptionFieldOptions = (
+  fields: Record<string, unknown>[]
+): SingleOptionFieldOptions => {
+  const targets = new Set<string>(Object.values(SINGLE_OPTION_FIELD_IDS));
+  const options: SingleOptionFieldOptions = {};
+
+  fields.forEach((field) => {
+    const key = typeof field.key === "string" ? field.key : null;
+
+    if (!key || !targets.has(key)) {
+      return;
+    }
+
+    const fieldOptions = Array.isArray(field.options) ? field.options : [];
+    const optionMap: Record<string, string> = {};
+
+    fieldOptions.forEach((option) => {
+      if (!option || typeof option !== "object") {
+        return;
+      }
+
+      const record = option as Record<string, unknown>;
+      const label = typeof record.label === "string" ? record.label.trim() : null;
+
+      if (!label || label.length === 0) {
+        return;
+      }
+
+      registerDealFieldOptionKey(optionMap, record.id, label);
+      registerDealFieldOptionKey(optionMap, record.value, label);
+      registerDealFieldOptionKey(optionMap, record.key, label);
+    });
+
+    options[key] = optionMap;
+  });
+
+  return options;
+};
+
+const shouldUseCachedDealFieldOptions = (entry: DealFieldOptionsCacheEntry | null): boolean => {
+  if (!entry) {
+    return false;
+  }
+
+  const timestamp = Date.parse(entry.fetchedAt);
+
+  if (!Number.isFinite(timestamp)) {
+    return false;
+  }
+
+  return Date.now() - timestamp < DEAL_FIELD_OPTIONS_TTL_MS;
+};
+
+const fetchDealFieldOptions = async (): Promise<SingleOptionFieldOptions> => {
+  const fields = await listDealFields();
+  return extractSingleOptionFieldOptions(fields);
+};
+
+const loadDealFieldOptions = async (): Promise<SingleOptionFieldOptions> => {
+  if (shouldUseCachedDealFieldOptions(inMemoryDealFieldOptions)) {
+    return inMemoryDealFieldOptions!.options;
+  }
+
+  const stored = await readSharedState<DealFieldOptionsCacheEntry | null>(
+    SHARED_STATE_KEYS.dealFieldOptions,
+    null
+  );
+
+  if (shouldUseCachedDealFieldOptions(stored)) {
+    inMemoryDealFieldOptions = stored;
+    return stored!.options;
+  }
+
+  try {
+    const options = await fetchDealFieldOptions();
+    const entry: DealFieldOptionsCacheEntry = { options, fetchedAt: new Date().toISOString() };
+    inMemoryDealFieldOptions = entry;
+    await writeSharedState(SHARED_STATE_KEYS.dealFieldOptions, entry);
+    return options;
+  } catch (error) {
+    console.error("No se pudieron actualizar los metadatos de campos de Pipedrive", error);
+
+    if (stored) {
+      inMemoryDealFieldOptions = stored;
+      return stored.options;
+    }
+
+    return {};
+  }
+};
+
+const resolveSingleOptionFieldValue = (
+  value: string | null,
+  fieldId: string,
+  options: SingleOptionFieldOptions
+): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const fieldOptions = options[fieldId];
+
+  if (!fieldOptions) {
+    return trimmed;
+  }
+
+  const normalized = normaliseComparisonText(trimmed);
+  return fieldOptions[trimmed] ?? fieldOptions[normalized] ?? trimmed;
+};
+
 const mapSingleOptionBooleanValue = (value: string | null): string | null => {
   if (!value) {
     return null;
@@ -672,7 +831,7 @@ const mapSingleOptionBooleanValue = (value: string | null): string | null => {
   }
 
   if (BOOLEAN_SINGLE_OPTION_TRUE_VALUES.has(normalized)) {
-    return "Si";
+    return "Sí";
   }
 
   if (BOOLEAN_SINGLE_OPTION_FALSE_VALUES.has(normalized)) {
@@ -1566,7 +1725,10 @@ const parseDealFormations = (deal: Record<string, unknown>): string[] => {
   return Array.from(set);
 };
 
-const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => {
+const mapPipedriveDealToRecord = (
+  deal: Record<string, unknown>,
+  fieldOptions: SingleOptionFieldOptions
+): DealRecord => {
   const dealId = toOptionalNumber(deal["id"]);
 
   if (dealId === null) {
@@ -1685,10 +1847,31 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     ])
   );
 
-  const sede = mapSedeValue(rawSede);
-  const caes = mapSingleOptionBooleanValue(rawCaes);
-  const fundae = mapSingleOptionBooleanValue(rawFundae);
-  const hotelPernocta = mapSingleOptionBooleanValue(rawHotelPernocta);
+  const resolvedSede = resolveSingleOptionFieldValue(
+    rawSede,
+    SINGLE_OPTION_FIELD_IDS.sede,
+    fieldOptions
+  );
+  const resolvedCaes = resolveSingleOptionFieldValue(
+    rawCaes,
+    SINGLE_OPTION_FIELD_IDS.caes,
+    fieldOptions
+  );
+  const resolvedFundae = resolveSingleOptionFieldValue(
+    rawFundae,
+    SINGLE_OPTION_FIELD_IDS.fundae,
+    fieldOptions
+  );
+  const resolvedHotelPernocta = resolveSingleOptionFieldValue(
+    rawHotelPernocta,
+    SINGLE_OPTION_FIELD_IDS.hotelPernocta,
+    fieldOptions
+  );
+
+  const sede = mapSedeValue(resolvedSede);
+  const caes = mapSingleOptionBooleanValue(resolvedCaes);
+  const fundae = mapSingleOptionBooleanValue(resolvedFundae);
+  const hotelPernocta = mapSingleOptionBooleanValue(resolvedHotelPernocta);
 
   const formations = parseDealFormations(deal);
   const notes: DealNote[] = [];
@@ -1814,6 +1997,15 @@ const synchronizeDealsFromPipedrive = async (
       return;
     }
 
+    let fieldOptions: SingleOptionFieldOptions = {};
+
+    try {
+      fieldOptions = await loadDealFieldOptions();
+    } catch (error) {
+      console.error("No se pudieron cargar los metadatos de campos de Pipedrive", error);
+      fieldOptions = {};
+    }
+
     const identifiers: number[] = [];
     remoteDeals.forEach((entry) => {
       if (!entry || typeof entry !== "object") {
@@ -1847,7 +2039,10 @@ const synchronizeDealsFromPipedrive = async (
           throw new Error("Respuesta inesperada al obtener un deal desde Pipedrive");
         }
 
-        const deal = mapPipedriveDealToRecord(rawDeal as Record<string, unknown>);
+        const deal = mapPipedriveDealToRecord(
+          rawDeal as Record<string, unknown>,
+          fieldOptions
+        );
         await saveDealRecord(deal);
       } catch (error) {
         console.error(`No se pudo sincronizar el deal ${dealId} desde Pipedrive`, error);
@@ -2037,7 +2232,19 @@ app.get("/deals", async (c) => {
         throw new Error("Respuesta inesperada de Pipedrive al obtener un presupuesto");
       }
 
-      const deal = mapPipedriveDealToRecord(rawDeal as Record<string, unknown>);
+      let fieldOptions: SingleOptionFieldOptions = {};
+
+      try {
+        fieldOptions = await loadDealFieldOptions();
+      } catch (error) {
+        console.error("No se pudieron cargar los metadatos de campos de Pipedrive", error);
+        fieldOptions = {};
+      }
+
+      const deal = mapPipedriveDealToRecord(
+        rawDeal as Record<string, unknown>,
+        fieldOptions
+      );
       await saveDealRecord(deal);
       return c.json({ deal, refreshed: true });
     } catch (error) {
