@@ -1,3 +1,86 @@
+export type SessionManualState = 'active' | 'suspended' | 'cancelled' | 'finalized';
+export type SessionAutomaticState = 'borrador' | 'planificado' | 'confirmado';
+export type SessionDisplayState =
+  | SessionAutomaticState
+  | 'suspendido'
+  | 'cancelado'
+  | 'finalizado';
+
+export type SessionStateColor = {
+  background: string;
+  border: string;
+  text: string;
+};
+
+const SESSION_MANUAL_STATE_VALUES: SessionManualState[] = [
+  'active',
+  'suspended',
+  'cancelled',
+  'finalized'
+];
+
+export const DEFAULT_SESSION_MANUAL_STATE: SessionManualState = 'active';
+
+const parseManualState = (value: unknown): SessionManualState =>
+  SESSION_MANUAL_STATE_VALUES.includes(value as SessionManualState)
+    ? (value as SessionManualState)
+    : DEFAULT_SESSION_MANUAL_STATE;
+
+const hasAssignments = (values: string[]): boolean =>
+  values.some((value) => value.trim().length > 0);
+
+const sessionStateLabels: Record<SessionDisplayState, string> = {
+  borrador: 'Borrador',
+  planificado: 'Planificado',
+  confirmado: 'Confirmado',
+  suspendido: 'Suspendido',
+  cancelado: 'Cancelado',
+  finalizado: 'Finalizado'
+};
+
+const sessionStateColors: Record<SessionDisplayState, SessionStateColor> = {
+  borrador: { background: '#f3f4f6', border: '#e0e3e9', text: '#374151' },
+  planificado: { background: '#edf7f1', border: '#cfe7da', text: '#2f5d3a' },
+  confirmado: { background: '#e3f5ea', border: '#b8e5c6', text: '#1f5131' },
+  suspendido: { background: '#fff6e5', border: '#ffe0a6', text: '#6c4a0c' },
+  cancelado: { background: '#fdecef', border: '#f5b6c0', text: '#7d1f2b' },
+  finalizado: { background: '#e6f0fb', border: '#bfd5f6', text: '#1f407a' }
+};
+
+export const getSessionAutomaticState = (
+  session: Pick<CalendarEvent, 'trainers' | 'mobileUnits'>
+): SessionAutomaticState => {
+  const hasTrainers = hasAssignments(session.trainers);
+  const hasMobileUnits = hasAssignments(session.mobileUnits);
+
+  if (hasTrainers && hasMobileUnits) {
+    return 'planificado';
+  }
+
+  return 'borrador';
+};
+
+export const getSessionDisplayState = (
+  session: Pick<CalendarEvent, 'manualState' | 'trainers' | 'mobileUnits'>
+): SessionDisplayState => {
+  switch (session.manualState) {
+    case 'suspended':
+      return 'suspendido';
+    case 'cancelled':
+      return 'cancelado';
+    case 'finalized':
+      return 'finalizado';
+    case 'active':
+    default:
+      return getSessionAutomaticState(session);
+  }
+};
+
+export const getSessionStateLabel = (state: SessionDisplayState): string => sessionStateLabels[state];
+
+export const getSessionStateColors = (state: SessionDisplayState): SessionStateColor =>
+  sessionStateColors[state];
+
 export interface CalendarEvent {
   id: string;
   dealId: number;
@@ -19,6 +102,7 @@ export interface CalendarEvent {
   caes: string | null;
   hotelPernocta: string | null;
   logisticsInfo: string | null;
+  manualState: SessionManualState;
 }
 
 const STORAGE_KEY = 'erp-calendar-events-v1';
@@ -118,7 +202,8 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     fundae: parseOptionalString((event as { fundae?: unknown }).fundae),
     caes: parseOptionalString((event as { caes?: unknown }).caes),
     hotelPernocta: parseOptionalString((event as { hotelPernocta?: unknown }).hotelPernocta),
-    logisticsInfo: parseOptionalString(event.logisticsInfo)
+    logisticsInfo: parseOptionalString(event.logisticsInfo),
+    manualState: parseManualState((event as { manualState?: unknown }).manualState)
   };
 };
 
