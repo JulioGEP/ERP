@@ -13,7 +13,12 @@ import Collapse from 'react-bootstrap/Collapse';
 import Col from 'react-bootstrap/Col';
 import Form from 'react-bootstrap/Form';
 import Row from 'react-bootstrap/Row';
-import { CalendarEvent } from '../../services/calendar';
+import {
+  CalendarEvent,
+  getSessionDisplayState,
+  getSessionStateColors,
+  getSessionStateLabel
+} from '../../services/calendar';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
@@ -449,28 +454,40 @@ const CalendarView = ({ events, onSelectEvent }: CalendarViewProps) => {
             scrollTime="06:00:00"
             height="parent"
             nowIndicator
-            events={filteredEvents.map((event) => ({
-              id: event.id,
-              title: buildEventTitle(event),
-              start: event.start,
-              end: event.end,
-              extendedProps: {
-                dealId: event.dealId,
-                dealTitle: event.dealTitle,
-                productName: event.productName,
-                attendees: event.attendees,
-                sede: event.sede,
-                address: event.address,
-                trainers: event.trainers,
-                mobileUnits: event.mobileUnits,
-                logisticsInfo: event.logisticsInfo,
-                clientName: event.clientName,
-                formations: event.formations,
-                fundae: event.fundae,
-                caes: event.caes,
-                hotelPernocta: event.hotelPernocta
-              }
-            }))}
+            events={filteredEvents.map((event) => {
+              const displayState = getSessionDisplayState(event);
+              const stateColors = getSessionStateColors(displayState);
+              const stateLabel = getSessionStateLabel(displayState);
+
+              return {
+                id: event.id,
+                title: buildEventTitle(event),
+                start: event.start,
+                end: event.end,
+                backgroundColor: stateColors.background,
+                borderColor: stateColors.border,
+                textColor: stateColors.text,
+                extendedProps: {
+                  dealId: event.dealId,
+                  dealTitle: event.dealTitle,
+                  productName: event.productName,
+                  attendees: event.attendees,
+                  sede: event.sede,
+                  address: event.address,
+                  trainers: event.trainers,
+                  mobileUnits: event.mobileUnits,
+                  logisticsInfo: event.logisticsInfo,
+                  clientName: event.clientName,
+                  formations: event.formations,
+                  fundae: event.fundae,
+                  caes: event.caes,
+                  hotelPernocta: event.hotelPernocta,
+                  manualState: event.manualState,
+                  state: displayState,
+                  stateLabel
+                }
+              };
+            })}
             eventClick={(info: EventClickArg) => {
               if (!onSelectEvent) {
                 return;
