@@ -217,6 +217,13 @@ const ensureId = (value: unknown, prefix: string, index: number): string => {
   return `${prefix}-${index}`;
 };
 
+const readFieldRecordText = (record: Record<string, unknown>): string | null =>
+  toOptionalText(record.label) ??
+  toOptionalText(record.name) ??
+  toOptionalText(record.text) ??
+  toOptionalText(record.title) ??
+  toOptionalText(record.value);
+
 const toStringList = (value: unknown): string[] => {
   const set = new Set<string>();
 
@@ -243,10 +250,9 @@ const toStringList = (value: unknown): string[] => {
 
     if (entry && typeof entry === "object") {
       const record = entry as Record<string, unknown>;
-      const direct =
-        record.value ?? record.name ?? record.label ?? record.text ?? record.title;
+      const direct = readFieldRecordText(record);
 
-      if (typeof direct === "string" || typeof direct === "number") {
+      if (direct) {
         process(direct);
       }
 
@@ -255,6 +261,8 @@ const toStringList = (value: unknown): string[] => {
         const nested = record[key];
         if (Array.isArray(nested)) {
           nested.forEach(process);
+        } else if (nested !== undefined && nested !== entry) {
+          process(nested);
         }
       });
     }
@@ -290,13 +298,7 @@ const toOptionalFieldText = (value: unknown): string | null => {
 
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    return (
-      toOptionalText(record.label) ??
-      toOptionalText(record.name) ??
-      toOptionalText(record.value) ??
-      toOptionalText(record.text) ??
-      toOptionalText(record.title)
-    );
+    return readFieldRecordText(record);
   }
 
   return null;
