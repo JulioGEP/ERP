@@ -5,7 +5,12 @@ import Modal from 'react-bootstrap/Modal';
 import Stack from 'react-bootstrap/Stack';
 import DealDetailModal from './components/deals/DealDetailModal';
 import HeaderBar from './components/layout/HeaderBar';
-import { CalendarEvent, loadCalendarEvents, persistCalendarEvents } from './services/calendar';
+import {
+  CalendarEvent,
+  fetchSharedCalendarEvents,
+  loadCalendarEvents,
+  persistCalendarEvents
+} from './services/calendar';
 import { fetchDealById, DealRecord } from './services/deals';
 import './App.scss';
 
@@ -28,8 +33,28 @@ const App = () => {
   const activeDealRequestRef = useRef<number | null>(null);
 
   useEffect(() => {
-    persistCalendarEvents(calendarEvents);
+    void persistCalendarEvents(calendarEvents);
   }, [calendarEvents]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const synchronizeCalendar = async () => {
+      const remoteEvents = await fetchSharedCalendarEvents();
+
+      if (!isActive) {
+        return;
+      }
+
+      setCalendarEvents(remoteEvents);
+    };
+
+    void synchronizeCalendar();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const handleUpdateSchedule = (dealId: number, events: CalendarEvent[]) => {
     setCalendarEvents((previous) => {

@@ -1,6 +1,10 @@
 import type { Handler } from "@netlify/functions";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { drizzle } from "drizzle-orm/neon-http";
+import { neon } from "@neondatabase/serverless";
+import { eq, sql } from "drizzle-orm";
+import { sharedState } from "../../db/schema";
 import { getDealById } from "../../adapters/pipedrive";
 
 type DealNote = {
@@ -64,6 +68,176 @@ type RelatedEntity = {
   id: number | null;
   name: string | null;
   address: string | null;
+};
+
+const createDatabaseClient = () => {
+  const connectionString = process.env.DATABASE_URL;
+
+  if (!connectionString) {
+    console.warn("DATABASE_URL no configurada; se utilizará almacenamiento en memoria para los datos compartidos");
+    return null;
+  }
+
+  try {
+    const client = neon(connectionString);
+    return drizzle(client);
+  } catch (error) {
+    console.error("No se pudo inicializar la conexión con la base de datos", error);
+    return null;
+  }
+};
+
+const db = createDatabaseClient();
+
+type SharedStateEntry = {
+  value: unknown;
+  updatedAt: string;
+};
+
+const inMemorySharedState = new Map<string, SharedStateEntry>();
+
+let sharedStateTablePromise: Promise<void> | null = null;
+
+const ensureSharedStateTable = async (): Promise<boolean> => {
+  if (!db) {
+    return false;
+  }
+
+  if (!sharedStateTablePromise) {
+    sharedStateTablePromise = db
+      .execute(sql`
+        create table if not exists shared_state (
+          key text primary key,
+          value jsonb not null,
+          updated_at timestamptz default now() not null
+        )
+      `)
+      .then(() => undefined)
+      .catch((error) => {
+        console.error("No se pudo inicializar la tabla shared_state", error);
+        throw error;
+      });
+  }
+
+  try {
+    await sharedStateTablePromise;
+    return true;
+  } catch (error) {
+    console.error("Fallo al comprobar la tabla shared_state", error);
+    return false;
+  }
+};
+
+const readSharedState = async <T>(key: string, fallback: T): Promise<T> => {
+  if (!db) {
+    const stored = inMemorySharedState.get(key);
+    return stored ? (stored.value as T) : fallback;
+  }
+
+  const ensured = await ensureSharedStateTable();
+  if (!ensured) {
+    const stored = inMemorySharedState.get(key);
+    return stored ? (stored.value as T) : fallback;
+  }
+
+  try {
+    const result = await db
+      .select({ value: sharedState.value })
+      .from(sharedState)
+      .where(eq(sharedState.key, key))
+      .limit(1);
+
+    if (result.length === 0) {
+      return fallback;
+    }
+
+    const [entry] = result;
+    if (entry.value === null || entry.value === undefined) {
+      return fallback;
+    }
+
+    return entry.value as T;
+  } catch (error) {
+    console.error(`No se pudo leer el estado compartido para ${key}`, error);
+    const stored = inMemorySharedState.get(key);
+    return stored ? (stored.value as T) : fallback;
+  }
+};
+
+const writeSharedState = async <T>(key: string, value: T): Promise<void> => {
+  const serializedValue = value as unknown;
+
+  if (!db) {
+    inMemorySharedState.set(key, { value: serializedValue, updatedAt: new Date().toISOString() });
+    return;
+  }
+
+  const ensured = await ensureSharedStateTable();
+  if (!ensured) {
+    inMemorySharedState.set(key, { value: serializedValue, updatedAt: new Date().toISOString() });
+    return;
+  }
+
+  try {
+    const now = new Date();
+    await db
+      .insert(sharedState)
+      .values({ key, value: serializedValue as any, updatedAt: now })
+      .onConflictDoUpdate({
+        target: sharedState.key,
+        set: { value: serializedValue as any, updatedAt: now }
+      });
+  } catch (error) {
+    console.error(`No se pudo guardar el estado compartido para ${key}`, error);
+    inMemorySharedState.set(key, { value: serializedValue, updatedAt: new Date().toISOString() });
+  }
+};
+
+const SHARED_STATE_KEYS = {
+  calendarEvents: "calendar-events",
+  manualDeals: "manual-deals",
+  hiddenDeals: "hidden-deals",
+  dealExtras: "deal-extras"
+} as const;
+
+const sanitizeNumberList = (value: unknown): number[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const unique = new Set<number>();
+
+  value.forEach((item) => {
+    if (typeof item === "number" && Number.isFinite(item)) {
+      unique.add(item);
+      return;
+    }
+
+    if (typeof item === "string") {
+      const parsed = Number.parseInt(item, 10);
+      if (Number.isFinite(parsed)) {
+        unique.add(parsed);
+      }
+    }
+  });
+
+  return Array.from(unique.values());
+};
+
+type SharedExtrasPayload = {
+  notes: unknown[];
+  documents: unknown[];
+};
+
+const sanitizeSharedExtras = (value: unknown): SharedExtrasPayload => {
+  if (!value || typeof value !== "object") {
+    return { notes: [], documents: [] };
+  }
+
+  const record = value as Record<string, unknown>;
+  const notes = Array.isArray(record.notes) ? record.notes : [];
+  const documents = Array.isArray(record.documents) ? record.documents : [];
+  return { notes, documents };
 };
 
 const toOptionalString = (value: unknown): string | null => {
@@ -1303,6 +1477,125 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
 
 const app = new Hono().basePath("/.netlify/functions/api");
 app.use("*", cors());
+
+app.get("/calendar-events", async (c) => {
+  const events = await readSharedState<unknown[]>(SHARED_STATE_KEYS.calendarEvents, []);
+  return c.json({ events });
+});
+
+app.put("/calendar-events", async (c) => {
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch (error) {
+    console.error("No se pudo leer el cuerpo de la solicitud de calendario", error);
+    return c.json({ ok: false, message: "No se pudo leer la información del calendario." }, 400);
+  }
+
+  const events = (payload as { events?: unknown }).events;
+
+  if (!Array.isArray(events)) {
+    return c.json({ ok: false, message: "El formato de los eventos no es válido." }, 400);
+  }
+
+  await writeSharedState(SHARED_STATE_KEYS.calendarEvents, events);
+  return c.json({ ok: true, updatedAt: new Date().toISOString() });
+});
+
+app.get("/manual-deals", async (c) => {
+  const deals = await readSharedState<unknown[]>(SHARED_STATE_KEYS.manualDeals, []);
+  return c.json({ deals });
+});
+
+app.put("/manual-deals", async (c) => {
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch (error) {
+    console.error("No se pudo leer el cuerpo de la solicitud de deals manuales", error);
+    return c.json({ ok: false, message: "No se pudo leer la información de los presupuestos manuales." }, 400);
+  }
+
+  const deals = (payload as { deals?: unknown }).deals;
+
+  if (!Array.isArray(deals)) {
+    return c.json({ ok: false, message: "El formato de los presupuestos manuales no es válido." }, 400);
+  }
+
+  await writeSharedState(SHARED_STATE_KEYS.manualDeals, deals);
+  return c.json({ ok: true, updatedAt: new Date().toISOString() });
+});
+
+app.get("/hidden-deals", async (c) => {
+  const stored = await readSharedState<unknown>(SHARED_STATE_KEYS.hiddenDeals, []);
+  const dealIds = sanitizeNumberList(stored);
+  return c.json({ dealIds });
+});
+
+app.put("/hidden-deals", async (c) => {
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch (error) {
+    console.error("No se pudo leer el cuerpo de la solicitud de deals ocultos", error);
+    return c.json({ ok: false, message: "No se pudo leer la lista de presupuestos ocultos." }, 400);
+  }
+
+  const input = (payload as { dealIds?: unknown }).dealIds ?? payload;
+  const dealIds = sanitizeNumberList(input);
+
+  await writeSharedState(SHARED_STATE_KEYS.hiddenDeals, dealIds);
+  return c.json({ ok: true, dealIds, updatedAt: new Date().toISOString() });
+});
+
+app.get("/deal-extras", async (c) => {
+  const url = new URL(c.req.url);
+  const dealIdParam = url.searchParams.get("dealId");
+
+  if (!dealIdParam) {
+    return c.json({ dealId: null, extras: { notes: [], documents: [] }, message: "Debes indicar el identificador del presupuesto." }, 400);
+  }
+
+  const dealId = Number.parseInt(dealIdParam, 10);
+
+  if (!Number.isFinite(dealId)) {
+    return c.json({ dealId: null, extras: { notes: [], documents: [] }, message: "El identificador de presupuesto no es válido." }, 400);
+  }
+
+  const storage = await readSharedState<Record<string, unknown>>(SHARED_STATE_KEYS.dealExtras, {});
+  const extras = sanitizeSharedExtras(storage[String(dealId)]);
+  return c.json({ dealId, extras });
+});
+
+app.put("/deal-extras", async (c) => {
+  const url = new URL(c.req.url);
+  const dealIdParam = url.searchParams.get("dealId");
+
+  if (!dealIdParam) {
+    return c.json({ ok: false, message: "Debes indicar el identificador del presupuesto." }, 400);
+  }
+
+  const dealId = Number.parseInt(dealIdParam, 10);
+
+  if (!Number.isFinite(dealId)) {
+    return c.json({ ok: false, message: "El identificador del presupuesto no es válido." }, 400);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch (error) {
+    console.error("No se pudo leer el cuerpo de la solicitud de extras", error);
+    return c.json({ ok: false, message: "No se pudieron leer los datos adicionales del presupuesto." }, 400);
+  }
+
+  const extras = sanitizeSharedExtras(payload);
+  const storage = await readSharedState<Record<string, unknown>>(SHARED_STATE_KEYS.dealExtras, {});
+  const updated = { ...storage, [String(dealId)]: extras };
+  await writeSharedState(SHARED_STATE_KEYS.dealExtras, updated);
+
+  return c.json({ ok: true, dealId, extras, updatedAt: new Date().toISOString() });
+});
 
 const sampleDeals: DealRecord[] = [];
 

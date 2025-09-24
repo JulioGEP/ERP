@@ -73,3 +73,9 @@ export const documents = pgTable("documents", {
   signedUntil: timestamp("signed_until"),
   createdAt: timestamp("created_at").defaultNow()
 });
+
+export const sharedState = pgTable("shared_state", {
+  key: varchar("key", { length: 128 }).primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
