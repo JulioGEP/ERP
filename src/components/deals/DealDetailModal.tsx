@@ -12,7 +12,13 @@ import Row from 'react-bootstrap/Row';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
 import { CalendarEvent } from '../../services/calendar';
-import { DealAttachment, DealNote, DealProduct, DealRecord } from '../../services/deals';
+import {
+  DealAttachment,
+  DealNote,
+  DealProduct,
+  DealRecord,
+  countSessionsForProduct
+} from '../../services/deals';
 import {
   loadDealExtras,
   persistDealExtras,
@@ -158,11 +164,6 @@ const resolveProductName = (
   }
 
   return null;
-};
-
-const countSessionsForProduct = (product: DealProduct) => {
-  const quantity = Math.round(product.quantity);
-  return quantity > 0 ? quantity : 1;
 };
 
 const sessionTrainerOptions = Array.from({ length: 10 }, (_, index) => `Bombero ${index + 1}`);

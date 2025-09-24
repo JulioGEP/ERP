@@ -35,6 +35,12 @@ export interface DealProduct {
   isTraining: boolean;
 }
 
+export const countSessionsForProduct = (product: DealProduct): number => {
+  const rawQuantity = typeof product.quantity === 'number' ? product.quantity : 0;
+  const quantity = Number.isFinite(rawQuantity) ? Math.round(rawQuantity) : 0;
+  return quantity > 0 ? quantity : 1;
+};
+
 export interface DealRecord {
   id: number;
   title: string;
