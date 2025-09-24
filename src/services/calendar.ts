@@ -29,6 +29,21 @@ const parseManualState = (value: unknown): SessionManualState =>
 const hasAssignments = (values: string[]): boolean =>
   values.some((value) => value.trim().length > 0);
 
+const hasValidDateTime = (value: string | null | undefined): value is string => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return false;
+  }
+
+  const timestamp = Date.parse(trimmed);
+  return Number.isFinite(timestamp);
+};
+
 const sessionStateLabels: Record<SessionDisplayState, string> = {
   borrador: 'Borrador',
   planificado: 'Planificado',
@@ -48,12 +63,14 @@ const sessionStateColors: Record<SessionDisplayState, SessionStateColor> = {
 };
 
 export const getSessionAutomaticState = (
-  session: Pick<CalendarEvent, 'trainers' | 'mobileUnits'>
+  session: Pick<CalendarEvent, 'trainers' | 'mobileUnits' | 'start' | 'end'>
 ): SessionAutomaticState => {
   const hasTrainers = hasAssignments(session.trainers);
   const hasMobileUnits = hasAssignments(session.mobileUnits);
+  const hasStartDate = hasValidDateTime(session.start);
+  const hasEndDate = hasValidDateTime(session.end);
 
-  if (hasTrainers && hasMobileUnits) {
+  if (hasTrainers && hasMobileUnits && hasStartDate && hasEndDate) {
     return 'planificado';
   }
 
@@ -61,7 +78,7 @@ export const getSessionAutomaticState = (
 };
 
 export const getSessionDisplayState = (
-  session: Pick<CalendarEvent, 'manualState' | 'trainers' | 'mobileUnits'>
+  session: Pick<CalendarEvent, 'manualState' | 'trainers' | 'mobileUnits' | 'start' | 'end'>
 ): SessionDisplayState => {
   switch (session.manualState) {
     case 'suspended':
@@ -119,21 +136,6 @@ const isStoredCalendarEvent = (event: unknown): event is StoredCalendarEvent => 
 
   const candidate = event as { id?: unknown; dealId?: unknown };
   return typeof candidate.id === 'string' && typeof candidate.dealId === 'number';
-};
-
-const hasValidDateTime = (value: string | null | undefined): value is string => {
-  if (typeof value !== 'string') {
-    return false;
-  }
-
-  const trimmed = value.trim();
-
-  if (trimmed.length === 0) {
-    return false;
-  }
-
-  const timestamp = Date.parse(trimmed);
-  return Number.isFinite(timestamp);
 };
 
 const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
