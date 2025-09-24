@@ -441,6 +441,40 @@ const updateSelectionSlot = (items: string[], index: number, value: string): str
   return next;
 };
 
+const createScheduleSnapshot = (
+  sessions: SessionFormEntry[],
+  caes: string,
+  fundae: string,
+  hotelPernocta: string
+) => {
+  const normalizedSessions = sessions.map((session) => ({
+    key: session.key,
+    dealProductId: session.dealProductId,
+    productId: session.productId,
+    productName: session.productName,
+    recommendedHours: session.recommendedHours,
+    recommendedHoursRaw: session.recommendedHoursRaw,
+    sessionIndex: session.sessionIndex,
+    start: session.start,
+    end: session.end,
+    endTouched: session.endTouched,
+    attendees: session.attendees,
+    sede: session.sede,
+    address: session.address,
+    trainers: session.trainers,
+    mobileUnits: session.mobileUnits,
+    manualState: session.manualState,
+    logisticsInfo: session.logisticsInfo
+  }));
+
+  return JSON.stringify({
+    sessions: normalizedSessions,
+    caes,
+    fundae,
+    hotelPernocta
+  });
+};
+
 const DealDetailModal = ({
   show,
   deal,
@@ -471,6 +505,7 @@ const DealDetailModal = ({
   const [attachmentPreviewError, setAttachmentPreviewError] = useState<string | null>(null);
   const [attachmentPreviewLoading, setAttachmentPreviewLoading] = useState(false);
   const [showDocumentUnsavedConfirm, setShowDocumentUnsavedConfirm] = useState(false);
+  const [showScheduleUnsavedConfirm, setShowScheduleUnsavedConfirm] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -606,6 +641,24 @@ const DealDetailModal = ({
     closeDocumentModal();
   }, [closeDocumentModal, isDocumentDirty]);
 
+  const handleScheduleModalCloseRequest = useCallback(() => {
+    if (hasScheduleChanges) {
+      setShowScheduleUnsavedConfirm(true);
+      return;
+    }
+
+    onHide();
+  }, [hasScheduleChanges, onHide]);
+
+  const handleKeepEditingSchedule = useCallback(() => {
+    setShowScheduleUnsavedConfirm(false);
+  }, []);
+
+  const handleConfirmScheduleDiscard = useCallback(() => {
+    setShowScheduleUnsavedConfirm(false);
+    onHide();
+  }, [onHide]);
+
   const eventsByKey = useMemo(() => {
     const map = new Map<string, CalendarEvent>();
     events
@@ -693,6 +746,19 @@ const DealDetailModal = ({
   const [caesValue, setCaesValue] = useState(deal.caes ?? '');
   const [fundaeValue, setFundaeValue] = useState(deal.fundae ?? '');
   const [hotelPernoctaValue, setHotelPernoctaValue] = useState(deal.hotelPernocta ?? '');
+  const [scheduleBaseline, setScheduleBaseline] = useState(() =>
+    createScheduleSnapshot(
+      initialSessions,
+      deal.caes ?? '',
+      deal.fundae ?? '',
+      deal.hotelPernocta ?? ''
+    )
+  );
+  const currentScheduleSnapshot = useMemo(
+    () => createScheduleSnapshot(sessions, caesValue, fundaeValue, hotelPernoctaValue),
+    [sessions, caesValue, fundaeValue, hotelPernoctaValue]
+  );
+  const hasScheduleChanges = currentScheduleSnapshot !== scheduleBaseline;
 
   useEffect(() => {
     setSessions(initialSessions);
@@ -733,6 +799,19 @@ const DealDetailModal = ({
       setHotelPernoctaValue(deal.hotelPernocta ?? '');
     }
   }, [deal.hotelPernocta, show]);
+
+  useEffect(() => {
+    if (show) {
+      setScheduleBaseline(
+        createScheduleSnapshot(
+          initialSessions,
+          deal.caes ?? '',
+          deal.fundae ?? '',
+          deal.hotelPernocta ?? ''
+        )
+      );
+    }
+  }, [deal.caes, deal.fundae, deal.hotelPernocta, initialSessions, show]);
 
   const localNoteEntries: DisplayNote[] = useMemo(
     () =>
@@ -1093,6 +1172,9 @@ const DealDetailModal = ({
 
     onUpdateSchedule(deal.id, eventsToSave);
     setSaveFeedback('La calendarización se guardó correctamente.');
+    setScheduleBaseline(currentScheduleSnapshot);
+    setShowScheduleUnsavedConfirm(false);
+    onHide();
   };
 
   const productOptions = useMemo(() => {
@@ -1359,7 +1441,13 @@ const DealDetailModal = ({
 
   return (
     <>
-      <Modal show={show} onHide={onHide} size="xl" backdrop="static" fullscreen="md-down">
+      <Modal
+        show={show}
+        onHide={handleScheduleModalCloseRequest}
+        size="xl"
+        backdrop="static"
+        fullscreen="md-down"
+      >
         <Modal.Header closeButton>
           <div>
             <Modal.Title>Presupuesto #{deal.id}</Modal.Title>
@@ -2070,7 +2158,7 @@ const DealDetailModal = ({
             Los cambios se guardan en el calendario interno de planificación.
           </div>
           <div className="d-flex gap-2">
-            <Button variant="secondary" onClick={onHide}>
+            <Button variant="secondary" onClick={handleScheduleModalCloseRequest}>
               Cerrar
             </Button>
             <Button
@@ -2081,6 +2169,21 @@ const DealDetailModal = ({
               Guardar en calendario
             </Button>
           </div>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal show={showScheduleUnsavedConfirm} onHide={handleKeepEditingSchedule} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Cambios sin guardar</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>Hay cambios sin guardar, ¿salimos sin guardar?</Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleKeepEditingSchedule}>
+            No
+          </Button>
+          <Button variant="primary" onClick={handleConfirmScheduleDiscard}>
+            Ok
+          </Button>
         </Modal.Footer>
       </Modal>
 
