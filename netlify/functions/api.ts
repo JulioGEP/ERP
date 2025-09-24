@@ -551,6 +551,33 @@ const toOptionalString = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const toOptionalUrl = (value: unknown): string | null => {
+  const text = toOptionalString(value);
+  if (!text) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch {
+    if (text.startsWith("//")) {
+      try {
+        const parsed = new URL(`https:${text}`);
+        return parsed.toString();
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  return null;
+};
+
 const toStringWithFallback = (value: unknown, fallback: string): string =>
   toOptionalString(value) ?? fallback;
 
@@ -1512,18 +1539,22 @@ const parsePipedriveAttachments = (
         `Archivo ${index + 1}`;
 
       const url =
-        toOptionalString(record.url) ??
-        toOptionalString(record.download_url) ??
-        toOptionalString(record.link) ??
-        toOptionalString(record.file_url) ??
-        toOptionalString(record.view_url) ??
-        "";
+        toOptionalUrl(record.url) ??
+        toOptionalUrl(record.download_url) ??
+        toOptionalUrl(record.link) ??
+        toOptionalUrl(record.file_url) ??
+        toOptionalUrl(record.view_url) ??
+        null;
 
       const downloadUrl =
-        toOptionalString(record.download_url) ??
-        toOptionalString(record.url) ??
-        toOptionalString(record.link) ??
+        toOptionalUrl(record.download_url) ??
+        toOptionalUrl(record.url) ??
+        toOptionalUrl(record.link) ??
         null;
+
+      if (!url && !downloadUrl) {
+        return;
+      }
 
       const fileType =
         toOptionalString(record.file_type) ??
@@ -1556,7 +1587,7 @@ const parsePipedriveAttachments = (
       result.push({
         id,
         name: toStringWithFallback(name, `Archivo ${index + 1}`),
-        url: url || downloadUrl || "",
+        url: url ?? downloadUrl ?? "",
         downloadUrl,
         fileType,
         addedAt,
@@ -1572,11 +1603,16 @@ const parsePipedriveAttachments = (
 
   const text = toOptionalText(value);
   if (text) {
+    const url = toOptionalUrl(text);
+    if (!url) {
+      return result;
+    }
+
     result.push({
       id: `${idPrefix}-${source}-attachment-0`,
       name: text,
-      url: text,
-      downloadUrl: text,
+      url,
+      downloadUrl: url,
       fileType: null,
       addedAt: null,
       addedBy: null,
