@@ -333,6 +333,40 @@ const sanitizeDealRecord = (value: unknown): DealRecord | null => {
     parseOptionalString(candidate['won_time']) ??
     parseOptionalString(candidate['wonTime']);
 
+  const rawTrainingProducts = parseDealProducts(candidate.trainingProducts);
+  const rawExtraProducts = parseDealProducts(candidate.extraProducts);
+  const productMap = new Map<number, DealProduct>();
+
+  [...rawTrainingProducts, ...rawExtraProducts].forEach((product) => {
+    productMap.set(product.dealProductId, product);
+  });
+
+  const trainingProducts: DealProduct[] = [];
+  const extraProducts: DealProduct[] = [];
+
+  productMap.forEach((product) => {
+    const codeText = typeof product.code === 'string' ? product.code : '';
+    const normalizedCode = codeText.trim().toLowerCase();
+    const isFormationProduct = normalizedCode.includes('form-');
+    const normalizedProduct: DealProduct = {
+      ...product,
+      isTraining: isFormationProduct
+    };
+
+    if (isFormationProduct) {
+      trainingProducts.push(normalizedProduct);
+    } else {
+      extraProducts.push(normalizedProduct);
+    }
+  });
+
+  const fallbackFormations = parseStringArray(candidate.formations);
+  const formationNames = parseStringArray(trainingProducts.map((product) => product.name));
+  const formations = formationNames.length > 0 ? formationNames : fallbackFormations;
+
+  const notes = parseDealNotes(candidate.notes);
+  const attachments = parseDealAttachments(candidate.attachments);
+
   return {
     id: identifier,
     title: parseString(candidate.title),
@@ -346,11 +380,11 @@ const sanitizeDealRecord = (value: unknown): DealRecord | null => {
     pipelineId: parseOptionalNumber(candidate.pipelineId),
     pipelineName: parseOptionalString(candidate.pipelineName),
     wonDate,
-    formations: parseStringArray(candidate.formations),
-    trainingProducts: parseDealProducts(candidate.trainingProducts),
-    extraProducts: parseDealProducts(candidate.extraProducts),
-    notes: parseDealNotes(candidate.notes),
-    attachments: parseDealAttachments(candidate.attachments)
+    formations,
+    trainingProducts,
+    extraProducts,
+    notes,
+    attachments
   } satisfies DealRecord;
 };
 

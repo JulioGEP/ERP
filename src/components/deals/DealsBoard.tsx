@@ -150,6 +150,9 @@ const buildUniqueList = (values: string[]): string[] => {
   return Array.from(map.values());
 };
 
+const getTrainingProductNames = (deal: DealRecord): string[] =>
+  buildUniqueList(deal.trainingProducts.map((product) => product.name));
+
 const buildSessionKey = (dealId: number, dealProductId: number, sessionIndex: number) =>
   `${dealId}-${dealProductId}-${sessionIndex}`;
 
@@ -271,7 +274,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
 
   const fallbackClientName = 'Sin organización asociada';
   const fallbackSede = 'Sin sede definida';
-  const fallbackFormationsLabel = 'Sin formaciones form-';
+  const fallbackFormationsLabel = 'Sin productos de formación';
 
   const formatDealDate = useCallback(
     (value: string | null) => {
@@ -532,8 +535,14 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
           return deal.title ?? '';
         case 'clientName':
           return deal.clientName ?? fallbackClientName;
-        case 'formations':
+        case 'formations': {
+          const trainingNames = getTrainingProductNames(deal);
+          if (trainingNames.length > 0) {
+            return trainingNames.join(' ');
+          }
+
           return deal.formations.length > 0 ? deal.formations.join(' ') : fallbackFormationsLabel;
+        }
         case 'fundae':
           return deal.fundae ?? '';
         case 'caes':
@@ -633,10 +642,23 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
           comparison = compareStrings(first.sede ?? fallbackSede, second.sede ?? fallbackSede);
           break;
         case 'formations': {
+          const firstTraining = getTrainingProductNames(first);
+          const secondTraining = getTrainingProductNames(second);
+
           const firstLabel =
-            first.formations.length > 0 ? first.formations.join(', ') : fallbackFormationsLabel;
+            firstTraining.length > 0
+              ? firstTraining.join(', ')
+              : first.formations.length > 0
+                ? first.formations.join(', ')
+                : fallbackFormationsLabel;
+
           const secondLabel =
-            second.formations.length > 0 ? second.formations.join(', ') : fallbackFormationsLabel;
+            secondTraining.length > 0
+              ? secondTraining.join(', ')
+              : second.formations.length > 0
+                ? second.formations.join(', ')
+                : fallbackFormationsLabel;
+
           comparison = compareStrings(firstLabel, secondLabel);
           break;
         }
@@ -966,45 +988,57 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
                 {isLoading && skeletonRows}
 
                 {!isLoading && sortedDeals.length > 0 &&
-                  sortedDeals.map((deal) => (
-                    <tr
-                      key={deal.id}
-                      role="button"
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => handleSelectDeal(deal.id)}
-                    >
-                      <td className="fw-semibold text-primary">#{deal.id}</td>
-                      <td className="text-nowrap">{formatDealDate(deal.wonDate)}</td>
-                      <td>{deal.title}</td>
-                      <td>{deal.clientName ?? fallbackClientName}</td>
-                      <td>{deal.sede ?? fallbackSede}</td>
-                      <td>
-                        {deal.formations.length > 0 ? (
-                          <Stack direction="horizontal" gap={2} className="flex-wrap">
-                            {deal.formations.map((name) => (
-                              <Badge key={name} bg="info" text="dark" className="px-3 py-2 rounded-pill">
-                                {name}
-                              </Badge>
-                            ))}
-                          </Stack>
-                        ) : (
-                          <span className="text-muted">{fallbackFormationsLabel}</span>
-                        )}
-                      </td>
-                      <td className="text-end">
-                        <Button
-                          variant="outline-danger"
-                          size="sm"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleRemoveDeal(deal.id);
-                          }}
-                        >
-                          Eliminar
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  sortedDeals.map((deal) => {
+                    const trainingNames = getTrainingProductNames(deal);
+
+                    return (
+                      <tr
+                        key={deal.id}
+                        role="button"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => handleSelectDeal(deal.id)}
+                      >
+                        <td className="fw-semibold text-primary">#{deal.id}</td>
+                        <td className="text-nowrap">{formatDealDate(deal.wonDate)}</td>
+                        <td>{deal.title}</td>
+                        <td>{deal.clientName ?? fallbackClientName}</td>
+                        <td>{deal.sede ?? fallbackSede}</td>
+                        <td>
+                          {trainingNames.length > 0 ? (
+                            <Stack direction="horizontal" gap={2} className="flex-wrap">
+                              {trainingNames.map((name) => (
+                                <Badge key={name} bg="info" text="dark" className="px-3 py-2 rounded-pill">
+                                  {name}
+                                </Badge>
+                              ))}
+                            </Stack>
+                          ) : deal.formations.length > 0 ? (
+                            <Stack direction="horizontal" gap={2} className="flex-wrap">
+                              {deal.formations.map((name) => (
+                                <Badge key={name} bg="info" text="dark" className="px-3 py-2 rounded-pill">
+                                  {name}
+                                </Badge>
+                              ))}
+                            </Stack>
+                          ) : (
+                            <span className="text-muted">{fallbackFormationsLabel}</span>
+                          )}
+                        </td>
+                        <td className="text-end">
+                          <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleRemoveDeal(deal.id);
+                            }}
+                          >
+                            Eliminar
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </Table>
           </div>

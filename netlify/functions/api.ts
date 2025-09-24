@@ -1590,6 +1590,11 @@ const parseDealProducts = (
         isTraining = defaultIsTraining ?? true;
       }
 
+      if (code) {
+        const normalizedCode = normaliseComparisonText(code);
+        isTraining = normalizedCode.includes("form-");
+      }
+
       const product: DealProduct = {
         dealProductId,
         productId: productId ?? null,
@@ -1779,11 +1784,41 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
   const fundae = mapSingleOptionBooleanValue(rawFundae);
   const hotelPernocta = mapSingleOptionBooleanValue(rawHotelPernocta);
 
-  const formations = parseDealFormations(deal);
   const notes: DealNote[] = [];
   const attachments: DealAttachment[] = [];
 
   const products = parseDealProducts(dealId, deal, notes, attachments);
+
+  const trainingProducts: DealProduct[] = [];
+  const extraProducts: DealProduct[] = [];
+
+  products.forEach((product) => {
+    const codeText = typeof product.code === "string" ? product.code : "";
+    const normalizedCode = codeText ? normaliseComparisonText(codeText) : "";
+    const isFormationProduct = normalizedCode.includes("form-");
+    const normalizedProduct: DealProduct = {
+      ...product,
+      isTraining: isFormationProduct
+    };
+
+    if (isFormationProduct) {
+      trainingProducts.push(normalizedProduct);
+    } else {
+      extraProducts.push(normalizedProduct);
+    }
+  });
+
+  const trainingFormationNames = Array.from(
+    new Set(
+      trainingProducts
+        .map((product) => product.name.trim())
+        .filter((name) => name.length > 0)
+    )
+  );
+
+  const fallbackFormations = parseDealFormations(deal);
+  const formations =
+    trainingFormationNames.length > 0 ? trainingFormationNames : fallbackFormations;
 
   const noteSources: unknown[] = [
     deal["notes"],
@@ -1838,9 +1873,6 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     );
     parsed.forEach((attachment) => pushUniqueAttachment(attachments, attachment));
   });
-
-  const trainingProducts = products.filter((product) => product.isTraining);
-  const extraProducts = products.filter((product) => !product.isTraining);
 
   return {
     id: dealId,
