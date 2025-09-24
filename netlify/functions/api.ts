@@ -1309,41 +1309,41 @@ const parseDealProducts = (
   let fallbackCounter = 1;
   const generateFallbackId = () => -fallbackCounter++;
 
-  const productSources: { value: unknown; defaultIsTraining: boolean | null }[] = [
-    { value: deal["products"], defaultIsTraining: null },
-    { value: deal["product_items"], defaultIsTraining: null },
-    { value: deal["productItems"], defaultIsTraining: null },
-    { value: deal["deal_products"], defaultIsTraining: null },
-    { value: deal["dealProducts"], defaultIsTraining: null },
-    { value: deal["items"], defaultIsTraining: null },
-    { value: readValueByPath(deal, "product_data"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "productData"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additional_data.products"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additional_data.items"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additional_data.deal.products"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additional_data.deal.product_items"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additional_data.deal.items"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additionalData.products"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additionalData.items"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additionalData.deal.products"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additionalData.deal.product_items"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "additionalData.deal.items"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "related_objects.products"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "related_objects.product_items"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "related_objects.deal_products"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "related_objects.dealProducts"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "relatedObjects.products"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "relatedObjects.product_items"), defaultIsTraining: null },
-    { value: readValueByPath(deal, "relatedObjects.deal_products"), defaultIsTraining: null },
-    { value: deal["training_products"], defaultIsTraining: true },
-    { value: deal["trainingProducts"], defaultIsTraining: true },
-    { value: deal["extra_products"], defaultIsTraining: false },
-    { value: deal["extraProducts"], defaultIsTraining: false }
+  const productSources: { value: unknown }[] = [
+    { value: deal["products"] },
+    { value: deal["product_items"] },
+    { value: deal["productItems"] },
+    { value: deal["deal_products"] },
+    { value: deal["dealProducts"] },
+    { value: deal["items"] },
+    { value: readValueByPath(deal, "product_data") },
+    { value: readValueByPath(deal, "productData") },
+    { value: readValueByPath(deal, "additional_data.products") },
+    { value: readValueByPath(deal, "additional_data.items") },
+    { value: readValueByPath(deal, "additional_data.deal.products") },
+    { value: readValueByPath(deal, "additional_data.deal.product_items") },
+    { value: readValueByPath(deal, "additional_data.deal.items") },
+    { value: readValueByPath(deal, "additionalData.products") },
+    { value: readValueByPath(deal, "additionalData.items") },
+    { value: readValueByPath(deal, "additionalData.deal.products") },
+    { value: readValueByPath(deal, "additionalData.deal.product_items") },
+    { value: readValueByPath(deal, "additionalData.deal.items") },
+    { value: readValueByPath(deal, "related_objects.products") },
+    { value: readValueByPath(deal, "related_objects.product_items") },
+    { value: readValueByPath(deal, "related_objects.deal_products") },
+    { value: readValueByPath(deal, "related_objects.dealProducts") },
+    { value: readValueByPath(deal, "relatedObjects.products") },
+    { value: readValueByPath(deal, "relatedObjects.product_items") },
+    { value: readValueByPath(deal, "relatedObjects.deal_products") },
+    { value: deal["training_products"] },
+    { value: deal["trainingProducts"] },
+    { value: deal["extra_products"] },
+    { value: deal["extraProducts"] }
   ];
 
   const productMap = new Map<number, DealProduct>();
 
-  productSources.forEach(({ value, defaultIsTraining }) => {
+  productSources.forEach(({ value }) => {
     const entries = normaliseArray(value);
 
     entries.forEach((entry, index) => {
@@ -1365,7 +1365,7 @@ const parseDealProducts = (
           recommendedHoursRaw: null,
           notes: [],
           attachments: [],
-          isTraining: defaultIsTraining ?? true
+          isTraining: false
         };
 
         if (!productMap.has(product.dealProductId)) {
@@ -1499,100 +1499,7 @@ const parseDealProducts = (
         pushUniqueAttachment(attachmentAccumulator, attachment)
       );
 
-      const trainingIndicatorValue = findFirstValue(candidateRecords, [
-        "is_training",
-        "isTraining",
-        "training",
-        "training_product",
-        "trainingProduct",
-        "es_formacion",
-        "esFormacion",
-        "formacion",
-        "formación"
-      ]);
-
-      const extraIndicatorValue = findFirstValue(candidateRecords, [
-        "is_extra",
-        "isExtra",
-        "extra",
-        "extra_product",
-        "extraProduct"
-      ]);
-
-      const typeIndicatorValue = findFirstValue(candidateRecords, [
-        "type",
-        "product_type",
-        "category",
-        "categoria",
-        "group",
-        "grupo"
-      ]);
-
-      let isTraining =
-        normalizedCode !== null
-          ? normalizedCode.startsWith("form-")
-          :
-            toOptionalBoolean(trainingIndicatorValue) ??
-              (() => {
-                const text = toOptionalText(trainingIndicatorValue);
-                if (!text) {
-                  return null;
-                }
-
-                const normalized = normaliseComparisonText(text);
-                if (["training", "formacion", "formacion", "curso", "formativa"].some((token) =>
-                  normalized.includes(token)
-                )) {
-                  return true;
-                }
-
-                if (["extra", "adicional", "complemento", "material", "otros"].some((token) =>
-                  normalized.includes(token)
-                )) {
-                  return false;
-                }
-
-                return null;
-              })();
-
-      if (isTraining === null) {
-        const extraBoolean = toOptionalBoolean(extraIndicatorValue);
-        if (extraBoolean !== null) {
-          isTraining = !extraBoolean;
-        } else {
-          const extraText = toOptionalText(extraIndicatorValue);
-          if (extraText) {
-            const normalized = normaliseComparisonText(extraText);
-            if (["extra", "adicional", "complemento", "material", "otros"].some((token) =>
-              normalized.includes(token)
-            )) {
-              isTraining = false;
-            }
-          }
-        }
-      }
-
-      if (isTraining === null && typeIndicatorValue !== undefined) {
-        const typeText = toOptionalText(typeIndicatorValue);
-        if (typeText) {
-          const normalized = normaliseComparisonText(typeText);
-          if (["extra", "adicional", "complemento", "material", "otros"].some((token) =>
-            normalized.includes(token)
-          )) {
-            isTraining = false;
-          } else if (
-            ["training", "formacion", "curso", "capacitacion", "formativa"].some((token) =>
-              normalized.includes(token)
-            )
-          ) {
-            isTraining = true;
-          }
-        }
-      }
-
-      if (isTraining === null) {
-        isTraining = defaultIsTraining ?? true;
-      }
+      const isTraining = normalizedCode !== null && normalizedCode.includes("form-");
 
       const product: DealProduct = {
         dealProductId,
@@ -1624,7 +1531,7 @@ const parseDealProducts = (
           notes: existing.notes.length > 0 ? existing.notes : product.notes,
           attachments:
             existing.attachments.length > 0 ? existing.attachments : product.attachments,
-          isTraining: existing.isTraining ?? product.isTraining
+          isTraining: existing.isTraining || product.isTraining
         });
       }
     });
