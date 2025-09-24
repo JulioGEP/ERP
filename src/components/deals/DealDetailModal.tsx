@@ -182,6 +182,15 @@ const sanitizeSelectionList = (values: string[]): string[] =>
 
 const normalizeSelectionValue = (value: string): string => value.trim();
 
+const sanitizeOptionalDealText = (value: string | null | undefined): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const getDateKey = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -901,6 +910,11 @@ const DealDetailModal = ({
     }
 
     const eventsToSave: CalendarEvent[] = [];
+    const sanitizedClientName = sanitizeOptionalDealText(deal.clientName);
+    const sanitizedFundae = sanitizeOptionalDealText(deal.fundae);
+    const sanitizedCaes = sanitizeOptionalDealText(deal.caes);
+    const sanitizedHotelPernocta = sanitizeOptionalDealText(deal.hotelPernocta);
+    const sanitizedFormations = sanitizeSelectionList(deal.formations);
 
     for (const session of sessions) {
       const startIso = toIsoString(session.start);
@@ -921,6 +935,7 @@ const DealDetailModal = ({
         id: `deal-${deal.id}-item-${session.dealProductId}-session-${session.sessionIndex}`,
         dealId: deal.id,
         dealTitle: deal.title,
+        clientName: sanitizedClientName,
         dealProductId: session.dealProductId,
         productId: session.productId,
         productName: session.productName,
@@ -932,6 +947,10 @@ const DealDetailModal = ({
         address: session.address.trim() ? session.address.trim() : null,
         trainers: sanitizedTrainers,
         mobileUnits: sanitizedMobileUnits,
+        formations: sanitizedFormations,
+        fundae: sanitizedFundae,
+        caes: sanitizedCaes,
+        hotelPernocta: sanitizedHotelPernocta,
         logisticsInfo: logisticsInfo ? logisticsInfo : null
       });
     }
