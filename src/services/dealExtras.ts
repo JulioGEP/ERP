@@ -24,6 +24,7 @@ export interface StoredDealExtras {
 }
 
 const STORAGE_KEY = 'erp-deal-extras-v1';
+const DEAL_EXTRAS_ENDPOINT = '/.netlify/functions/api/deal-extras';
 const isBrowser = typeof window !== 'undefined';
 
 const readStorage = (): Record<string, StoredDealExtras> => {
@@ -61,13 +62,66 @@ const writeStorage = (value: Record<string, StoredDealExtras>) => {
   }
 };
 
-export const loadDealExtras = (dealId: number): StoredDealExtras => {
-  const storage = readStorage();
-  return storage[String(dealId)] ?? { notes: [], documents: [] };
+const sanitizeExtrasValue = (value: unknown): StoredDealExtras => {
+  if (!value || typeof value !== 'object') {
+    return { notes: [], documents: [] };
+  }
+
+  const record = value as Record<string, unknown>;
+  const notes = Array.isArray(record.notes) ? (record.notes as StoredDealNote[]) : [];
+  const documents = Array.isArray(record.documents) ? (record.documents as StoredDealDocument[]) : [];
+
+  return { notes, documents };
 };
 
-export const persistDealExtras = (dealId: number, extras: StoredDealExtras) => {
+const updateDealExtrasInStorage = (dealId: number, extras: StoredDealExtras) => {
   const storage = readStorage();
-  storage[String(dealId)] = extras;
+  storage[String(dealId)] = sanitizeExtrasValue(extras);
   writeStorage(storage);
+};
+
+export const loadDealExtras = (dealId: number): StoredDealExtras => {
+  const storage = readStorage();
+  return sanitizeExtrasValue(storage[String(dealId)]);
+};
+
+export const persistDealExtras = async (dealId: number, extras: StoredDealExtras) => {
+  const sanitized = sanitizeExtrasValue(extras);
+  updateDealExtrasInStorage(dealId, sanitized);
+
+  try {
+    const query = new URLSearchParams({ dealId: String(dealId) });
+    const response = await fetch(`${DEAL_EXTRAS_ENDPOINT}?${query.toString()}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sanitized)
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Error HTTP ${response.status}`);
+    }
+  } catch (error) {
+    console.error('No se pudieron guardar las notas locales en el servidor compartido', error);
+  }
+};
+
+export const fetchDealExtras = async (dealId: number): Promise<StoredDealExtras> => {
+  try {
+    const query = new URLSearchParams({ dealId: String(dealId) });
+    const response = await fetch(`${DEAL_EXTRAS_ENDPOINT}?${query.toString()}`);
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Error HTTP ${response.status}`);
+    }
+
+    const payload = (await response.json()) as { extras?: unknown };
+    const sanitized = sanitizeExtrasValue(payload.extras);
+    updateDealExtrasInStorage(dealId, sanitized);
+    return sanitized;
+  } catch (error) {
+    console.error('No se pudieron cargar las notas locales desde el servidor compartido', error);
+    return loadDealExtras(dealId);
+  }
 };

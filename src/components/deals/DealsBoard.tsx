@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Alert from 'react-bootstrap/Alert';
 import Badge from 'react-bootstrap/Badge';
 import Button from 'react-bootstrap/Button';
@@ -15,6 +15,8 @@ import { CalendarEvent } from '../../services/calendar';
 import {
   fetchDealById,
   fetchDeals,
+  fetchSharedHiddenDealIds,
+  fetchSharedManualDeals,
   DealRecord,
   countSessionsForProduct,
   loadHiddenDealIds,
@@ -173,6 +175,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ field: 'wonDate', direction: 'desc' });
   const [manualDeals, setManualDeals] = useState<DealRecord[]>(() => loadStoredManualDeals());
   const [hiddenDealIds, setHiddenDealIds] = useState<number[]>(() => loadHiddenDealIds());
+  const hasSynchronizedSharedDataRef = useRef(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [filters, setFilters] = useState<DealsFilters>(() => createEmptyFilters());
   const filterPanelId = 'deals-filters-panel';
@@ -183,16 +186,71 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   });
 
   useEffect(() => {
-    persistStoredManualDeals(manualDeals);
+    void persistStoredManualDeals(manualDeals);
   }, [manualDeals]);
 
   useEffect(() => {
-    persistHiddenDealIds(hiddenDealIds);
+    void persistHiddenDealIds(hiddenDealIds);
   }, [hiddenDealIds]);
 
   useEffect(() => {
     setManualDeals((previous) => previous.filter((deal) => !hiddenDealIds.includes(deal.id)));
   }, [hiddenDealIds]);
+
+  useEffect(() => {
+    if (hasSynchronizedSharedDataRef.current) {
+      return () => {};
+    }
+
+    hasSynchronizedSharedDataRef.current = true;
+    let isActive = true;
+
+    const synchronizeSharedData = async () => {
+      await Promise.all([persistStoredManualDeals(manualDeals), persistHiddenDealIds(hiddenDealIds)]);
+
+      try {
+        const [sharedManualDeals, sharedHiddenIds] = await Promise.all([
+          fetchSharedManualDeals(),
+          fetchSharedHiddenDealIds()
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        setHiddenDealIds(sharedHiddenIds);
+
+        setManualDeals((previous) => {
+          const hiddenSet = new Set(sharedHiddenIds);
+          const merged = new Map<number, DealRecord>();
+
+          previous.forEach((deal) => {
+            if (!hiddenSet.has(deal.id)) {
+              merged.set(deal.id, deal);
+            }
+          });
+
+          sharedManualDeals.forEach((deal) => {
+            if (!hiddenSet.has(deal.id)) {
+              merged.set(deal.id, deal);
+            } else {
+              merged.delete(deal.id);
+            }
+          });
+
+          return Array.from(merged.values());
+        });
+      } catch (error) {
+        console.error('No se pudieron sincronizar los datos compartidos de presupuestos', error);
+      }
+    };
+
+    void synchronizeSharedData();
+
+    return () => {
+      isActive = false;
+    };
+  }, [hiddenDealIds, manualDeals]);
 
   const registerManualDeal = useCallback((deal: DealRecord) => {
     setManualDeals((previous) => {

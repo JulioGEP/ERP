@@ -124,6 +124,8 @@ export const fetchDealById = async (dealId: number): Promise<DealRecord> => {
 
 const MANUAL_DEALS_STORAGE_KEY = 'erp-manual-deals-v1';
 const HIDDEN_DEALS_STORAGE_KEY = 'erp-hidden-deals-v1';
+const MANUAL_DEALS_ENDPOINT = '/.netlify/functions/api/manual-deals';
+const HIDDEN_DEALS_ENDPOINT = '/.netlify/functions/api/hidden-deals';
 const isBrowser = typeof window !== 'undefined';
 
 const parseString = (value: unknown, fallback = ''): string =>
@@ -311,6 +313,80 @@ const dedupeDeals = (deals: DealRecord[]): DealRecord[] => {
   return result;
 };
 
+const sanitizeManualDealsForStorage = (deals: DealRecord[]): DealRecord[] =>
+  dedupeDeals(
+    deals
+      .map((deal) => sanitizeDealRecord(deal))
+      .filter((deal): deal is DealRecord => deal !== null)
+  );
+
+const persistManualDealsLocally = (deals: DealRecord[]) => {
+  if (!isBrowser) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(MANUAL_DEALS_STORAGE_KEY, JSON.stringify(deals));
+  } catch (error) {
+    console.error('No se pudieron guardar los deals manuales en el almacenamiento local', error);
+  }
+};
+
+const sanitizeHiddenDealIds = (dealIds: number[]): number[] =>
+  Array.from(new Set(dealIds.filter((dealId) => Number.isFinite(dealId))));
+
+const persistHiddenDealIdsLocally = (dealIds: number[]) => {
+  if (!isBrowser) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(HIDDEN_DEALS_STORAGE_KEY, JSON.stringify(dealIds));
+  } catch (error) {
+    console.error('No se pudo guardar la lista de deals ocultos', error);
+  }
+};
+
+export const fetchSharedManualDeals = async (): Promise<DealRecord[]> => {
+  try {
+    const response = await fetch(MANUAL_DEALS_ENDPOINT);
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Error HTTP ${response.status}`);
+    }
+
+    const payload = (await response.json()) as { deals?: unknown };
+    const deals = normaliseDealRecords(payload.deals);
+    const sanitized = dedupeDeals(deals);
+    persistManualDealsLocally(sanitized);
+    return sanitized;
+  } catch (error) {
+    console.error('No se pudieron cargar los deals manuales compartidos', error);
+    return loadStoredManualDeals();
+  }
+};
+
+export const fetchSharedHiddenDealIds = async (): Promise<number[]> => {
+  try {
+    const response = await fetch(HIDDEN_DEALS_ENDPOINT);
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Error HTTP ${response.status}`);
+    }
+
+    const payload = (await response.json()) as { dealIds?: unknown };
+    const hiddenIds = parseNumberArray(payload.dealIds);
+    const sanitized = sanitizeHiddenDealIds(hiddenIds);
+    persistHiddenDealIdsLocally(sanitized);
+    return sanitized;
+  } catch (error) {
+    console.error('No se pudieron cargar los deals ocultos compartidos', error);
+    return loadHiddenDealIds();
+  }
+};
+
 export const loadStoredManualDeals = (): DealRecord[] => {
   if (!isBrowser) {
     return [];
@@ -338,21 +414,23 @@ export const loadStoredManualDeals = (): DealRecord[] => {
   }
 };
 
-export const persistStoredManualDeals = (deals: DealRecord[]) => {
-  if (!isBrowser) {
-    return;
-  }
+export const persistStoredManualDeals = async (deals: DealRecord[]) => {
+  const sanitized = sanitizeManualDealsForStorage(deals);
+  persistManualDealsLocally(sanitized);
 
   try {
-    const sanitized = dedupeDeals(
-      deals
-        .map((deal) => sanitizeDealRecord(deal))
-        .filter((deal): deal is DealRecord => deal !== null)
-    );
+    const response = await fetch(MANUAL_DEALS_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deals: sanitized })
+    });
 
-    window.localStorage.setItem(MANUAL_DEALS_STORAGE_KEY, JSON.stringify(sanitized));
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Error HTTP ${response.status}`);
+    }
   } catch (error) {
-    console.error('No se pudieron guardar los deals manuales en el almacenamiento local', error);
+    console.error('No se pudieron guardar los deals manuales en el servidor compartido', error);
   }
 };
 
@@ -375,15 +453,22 @@ export const loadHiddenDealIds = (): number[] => {
   }
 };
 
-export const persistHiddenDealIds = (dealIds: number[]) => {
-  if (!isBrowser) {
-    return;
-  }
+export const persistHiddenDealIds = async (dealIds: number[]) => {
+  const uniqueIds = sanitizeHiddenDealIds(dealIds);
+  persistHiddenDealIdsLocally(uniqueIds);
 
   try {
-    const uniqueIds = Array.from(new Set(dealIds.filter((dealId) => Number.isFinite(dealId))));
-    window.localStorage.setItem(HIDDEN_DEALS_STORAGE_KEY, JSON.stringify(uniqueIds));
+    const response = await fetch(HIDDEN_DEALS_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dealIds: uniqueIds })
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Error HTTP ${response.status}`);
+    }
   } catch (error) {
-    console.error('No se pudo guardar la lista de deals ocultos', error);
+    console.error('No se pudo guardar la lista de deals ocultos en el servidor compartido', error);
   }
 };

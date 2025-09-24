@@ -28,6 +28,7 @@ import {
   countSessionsForProduct
 } from '../../services/deals';
 import {
+  fetchDealExtras,
   loadDealExtras,
   persistDealExtras,
   StoredDealDocument,
@@ -524,6 +525,27 @@ const DealDetailModal = ({
     setExtraProductsExpanded(false);
   }, [deal.id]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const synchronizeExtras = async () => {
+      const extras = await fetchDealExtras(deal.id);
+
+      if (!isActive) {
+        return;
+      }
+
+      setLocalNotes(extras.notes ?? []);
+      setLocalDocuments(extras.documents ?? []);
+    };
+
+    void synchronizeExtras();
+
+    return () => {
+      isActive = false;
+    };
+  }, [deal.id]);
+
   const isNoteDirty =
     noteModalMode !== 'view' &&
     (noteText !== noteModalInitialText || shareWithTrainer !== noteModalInitialShare);
@@ -930,7 +952,7 @@ const DealDetailModal = ({
   };
 
   const persistExtras = (notes: StoredDealNote[], documents: StoredDealDocument[]) => {
-    persistDealExtras(deal.id, { notes, documents });
+    void persistDealExtras(deal.id, { notes, documents });
   };
 
   const releaseAttachmentPreviewUrl = useCallback(() => {

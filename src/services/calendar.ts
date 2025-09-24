@@ -106,6 +106,7 @@ export interface CalendarEvent {
 }
 
 const STORAGE_KEY = 'erp-calendar-events-v1';
+const CALENDAR_ENDPOINT = '/.netlify/functions/api/calendar-events';
 
 const isBrowser = typeof window !== 'undefined';
 
@@ -207,6 +208,17 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
   };
 };
 
+const normaliseCalendarCollection = (value: unknown): CalendarEvent[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return (value as unknown[])
+    .filter(isStoredCalendarEvent)
+    .map(sanitizeCalendarEvent)
+    .filter(isCompleteCalendarEvent);
+};
+
 const isCompleteCalendarEvent = (event: CalendarEvent): boolean => {
   if (!hasValidDateTime(event.start) || !hasValidDateTime(event.end)) {
     return false;
@@ -222,6 +234,21 @@ const isCompleteCalendarEvent = (event: CalendarEvent): boolean => {
   return startTimestamp <= endTimestamp;
 };
 
+const sanitizeEventsForStorage = (events: CalendarEvent[]): CalendarEvent[] =>
+  events.filter(isCompleteCalendarEvent);
+
+const persistEventsLocally = (events: CalendarEvent[]) => {
+  if (!isBrowser) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+  } catch (error) {
+    console.error('No se pudieron guardar los eventos del calendario en el almacenamiento local', error);
+  }
+};
+
 export const loadCalendarEvents = (): CalendarEvent[] => {
   if (!isBrowser) {
     return [];
@@ -234,29 +261,48 @@ export const loadCalendarEvents = (): CalendarEvent[] => {
     }
 
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return (parsed as unknown[])
-      .filter(isStoredCalendarEvent)
-      .map(sanitizeCalendarEvent)
-      .filter(isCompleteCalendarEvent);
+    return normaliseCalendarCollection(parsed);
   } catch (error) {
     console.error('No se pudieron cargar los eventos del calendario desde el almacenamiento local', error);
     return [];
   }
 };
 
-export const persistCalendarEvents = (events: CalendarEvent[]) => {
-  if (!isBrowser) {
-    return;
-  }
+export const persistCalendarEvents = async (events: CalendarEvent[]) => {
+  const sanitizedEvents = sanitizeEventsForStorage(events);
+  persistEventsLocally(sanitizedEvents);
 
   try {
-    const sanitizedEvents = events.filter(isCompleteCalendarEvent);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizedEvents));
+    const response = await fetch(CALENDAR_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events: sanitizedEvents })
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Error HTTP ${response.status}`);
+    }
   } catch (error) {
-    console.error('No se pudieron guardar los eventos del calendario en el almacenamiento local', error);
+    console.error('No se pudieron guardar los eventos del calendario en el servidor compartido', error);
+  }
+};
+
+export const fetchSharedCalendarEvents = async (): Promise<CalendarEvent[]> => {
+  try {
+    const response = await fetch(CALENDAR_ENDPOINT);
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || `Error HTTP ${response.status}`);
+    }
+
+    const payload = (await response.json()) as { events?: unknown };
+    const events = normaliseCalendarCollection(payload.events);
+    persistEventsLocally(events);
+    return events;
+  } catch (error) {
+    console.error('No se pudieron cargar los eventos del calendario desde el servidor compartido', error);
+    return loadCalendarEvents();
   }
 };
