@@ -2,6 +2,7 @@ export interface CalendarEvent {
   id: string;
   dealId: number;
   dealTitle: string;
+  clientName: string | null;
   dealProductId: number;
   productId: number | null;
   productName: string;
@@ -13,6 +14,10 @@ export interface CalendarEvent {
   address: string | null;
   trainers: string[];
   mobileUnits: string[];
+  formations: string[];
+  fundae: string | null;
+  caes: string | null;
+  hotelPernocta: string | null;
   logisticsInfo: string | null;
 }
 
@@ -82,6 +87,7 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     id: event.id,
     dealId: event.dealId,
     dealTitle: parseString(event.dealTitle),
+    clientName: parseOptionalString((event as { clientName?: unknown }).clientName),
     dealProductId: parseNumber(event.dealProductId, 0),
     productId: parseOptionalNumber(event.productId),
     productName: parseString(event.productName),
@@ -93,6 +99,10 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     address: parseOptionalString(event.address),
     trainers,
     mobileUnits,
+    formations: sanitizeStringArray((event as { formations?: unknown }).formations),
+    fundae: parseOptionalString((event as { fundae?: unknown }).fundae),
+    caes: parseOptionalString((event as { caes?: unknown }).caes),
+    hotelPernocta: parseOptionalString((event as { hotelPernocta?: unknown }).hotelPernocta),
     logisticsInfo: parseOptionalString(event.logisticsInfo)
   };
 };
