@@ -36,6 +36,21 @@ const isStoredCalendarEvent = (event: unknown): event is StoredCalendarEvent => 
   return typeof candidate.id === 'string' && typeof candidate.dealId === 'number';
 };
 
+const hasValidDateTime = (value: string | null | undefined): value is string => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return false;
+  }
+
+  const timestamp = Date.parse(trimmed);
+  return Number.isFinite(timestamp);
+};
+
 const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
   const parseString = (value: unknown, fallback = ''): string =>
     typeof value === 'string' ? value : fallback;
@@ -107,6 +122,21 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
   };
 };
 
+const isCompleteCalendarEvent = (event: CalendarEvent): boolean => {
+  if (!hasValidDateTime(event.start) || !hasValidDateTime(event.end)) {
+    return false;
+  }
+
+  const startTimestamp = Date.parse(event.start);
+  const endTimestamp = Date.parse(event.end);
+
+  if (!Number.isFinite(startTimestamp) || !Number.isFinite(endTimestamp)) {
+    return false;
+  }
+
+  return startTimestamp <= endTimestamp;
+};
+
 export const loadCalendarEvents = (): CalendarEvent[] => {
   if (!isBrowser) {
     return [];
@@ -123,7 +153,10 @@ export const loadCalendarEvents = (): CalendarEvent[] => {
       return [];
     }
 
-    return (parsed as unknown[]).filter(isStoredCalendarEvent).map(sanitizeCalendarEvent);
+    return (parsed as unknown[])
+      .filter(isStoredCalendarEvent)
+      .map(sanitizeCalendarEvent)
+      .filter(isCompleteCalendarEvent);
   } catch (error) {
     console.error('No se pudieron cargar los eventos del calendario desde el almacenamiento local', error);
     return [];
@@ -136,7 +169,8 @@ export const persistCalendarEvents = (events: CalendarEvent[]) => {
   }
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    const sanitizedEvents = events.filter(isCompleteCalendarEvent);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizedEvents));
   } catch (error) {
     console.error('No se pudieron guardar los eventos del calendario en el almacenamiento local', error);
   }
