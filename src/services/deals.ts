@@ -92,8 +92,19 @@ const normaliseDealRecords = (value: unknown): DealRecord[] => {
 
 const NETLIFY_DEALS_ENDPOINT = '/.netlify/functions/api/deals';
 
-export const fetchDeals = async (): Promise<DealRecord[]> => {
-  const response = await fetch(NETLIFY_DEALS_ENDPOINT);
+type FetchDealsOptions = {
+  refresh?: boolean;
+};
+
+export const fetchDeals = async (options?: FetchDealsOptions): Promise<DealRecord[]> => {
+  const query = new URLSearchParams();
+
+  if (options?.refresh) {
+    query.set('refresh', '1');
+  }
+
+  const endpoint = query.size > 0 ? `${NETLIFY_DEALS_ENDPOINT}?${query.toString()}` : NETLIFY_DEALS_ENDPOINT;
+  const response = await fetch(endpoint);
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -103,8 +114,20 @@ export const fetchDeals = async (): Promise<DealRecord[]> => {
   return normaliseDealRecords(payload.deals);
 };
 
-export const fetchDealById = async (dealId: number): Promise<DealRecord> => {
+type FetchDealByIdOptions = {
+  refresh?: boolean;
+};
+
+export const fetchDealById = async (
+  dealId: number,
+  options?: FetchDealByIdOptions
+): Promise<DealRecord> => {
   const query = new URLSearchParams({ dealId: String(dealId) });
+
+  if (options?.refresh) {
+    query.set('refresh', '1');
+  }
+
   const response = await fetch(`${NETLIFY_DEALS_ENDPOINT}?${query.toString()}`);
 
   if (!response.ok) {
@@ -120,6 +143,38 @@ export const fetchDealById = async (dealId: number): Promise<DealRecord> => {
   }
 
   return deal;
+};
+
+export const persistDeal = async (deal: DealRecord): Promise<DealRecord> => {
+  const response = await fetch(NETLIFY_DEALS_ENDPOINT, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deal })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const payload = (await response.json()) as DealResponse;
+  const stored = sanitizeDealRecord(payload.deal);
+
+  if (!stored) {
+    throw new Error('La API devolvió un presupuesto con un formato no válido.');
+  }
+
+  return stored;
+};
+
+export const deleteDeal = async (dealId: number): Promise<void> => {
+  const query = new URLSearchParams({ dealId: String(dealId) });
+  const response = await fetch(`${NETLIFY_DEALS_ENDPOINT}?${query.toString()}`, {
+    method: 'DELETE'
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
 };
 
 const MANUAL_DEALS_STORAGE_KEY = 'erp-manual-deals-v1';

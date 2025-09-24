@@ -3,9 +3,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
-import { eq, sql } from "drizzle-orm";
-import { sharedState } from "../../db/schema";
-import { getDealById } from "../../adapters/pipedrive";
+import { desc, eq, sql } from "drizzle-orm";
+import { pipedriveDeals, sharedState } from "../../db/schema";
+import { getDealById, listDealsUpdatedDesc } from "../../adapters/pipedrive";
 
 type DealNote = {
   id: string;
@@ -193,12 +193,313 @@ const writeSharedState = async <T>(key: string, value: T): Promise<void> => {
   }
 };
 
+type DealStorageEntry = {
+  deal: DealRecord;
+  updatedAt: string;
+};
+
+const inMemoryDeals = new Map<number, DealStorageEntry>();
+
+let pipedriveDealsTablePromise: Promise<void> | null = null;
+
+const ensurePipedriveDealsTable = async (): Promise<boolean> => {
+  if (!db) {
+    return false;
+  }
+
+  if (!pipedriveDealsTablePromise) {
+    pipedriveDealsTablePromise = db
+      .execute(sql`
+        create table if not exists pipedrive_deals (
+          deal_id integer primary key,
+          title text not null,
+          client_name text,
+          pipeline_id integer,
+          pipeline_name text,
+          won_date text,
+          data jsonb not null,
+          created_at timestamptz default now() not null,
+          updated_at timestamptz default now() not null
+        )
+      `)
+      .then(() => undefined)
+      .catch((error) => {
+        console.error("No se pudo inicializar la tabla pipedrive_deals", error);
+        throw error;
+      });
+  }
+
+  try {
+    await pipedriveDealsTablePromise;
+    return true;
+  } catch (error) {
+    console.error("Fallo al comprobar la tabla pipedrive_deals", error);
+    return false;
+  }
+};
+
+const readDealsFromMemory = (): DealRecord[] => {
+  const entries = Array.from(inMemoryDeals.values());
+  entries.sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
+  return entries.map((entry) => entry.deal);
+};
+
+const sanitizeStoredDealRecord = (value: unknown): DealRecord | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Partial<DealRecord>;
+  const identifier = typeof record.id === "number" && Number.isFinite(record.id) ? record.id : null;
+
+  if (identifier === null) {
+    return null;
+  }
+
+  const toStringArray = (input: unknown): string[] => {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input.filter((item): item is string => typeof item === "string");
+  };
+
+  const toDealProductArray = (input: unknown): DealProduct[] => {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input.filter((item): item is DealProduct => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+
+      const candidate = item as DealProduct;
+      return typeof candidate.dealProductId === "number" && typeof candidate.name === "string";
+    });
+  };
+
+  const toDealNoteArray = (input: unknown): DealNote[] => {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input.filter((item): item is DealNote => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+
+      const candidate = item as DealNote;
+      return typeof candidate.id === "string" && typeof candidate.content === "string";
+    });
+  };
+
+  const toDealAttachmentArray = (input: unknown): DealAttachment[] => {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+
+    return input.filter((item): item is DealAttachment => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+
+      const candidate = item as DealAttachment;
+      return typeof candidate.id === "string" && typeof candidate.name === "string" && typeof candidate.url === "string";
+    });
+  };
+
+  return {
+    id: identifier,
+    title:
+      typeof record.title === "string" && record.title.trim().length > 0
+        ? record.title
+        : `Presupuesto #${identifier}`,
+    clientId: typeof record.clientId === "number" && Number.isFinite(record.clientId) ? record.clientId : null,
+    clientName: typeof record.clientName === "string" ? record.clientName : null,
+    sede: typeof record.sede === "string" ? record.sede : null,
+    address: typeof record.address === "string" ? record.address : null,
+    caes: typeof record.caes === "string" ? record.caes : null,
+    fundae: typeof record.fundae === "string" ? record.fundae : null,
+    hotelPernocta: typeof record.hotelPernocta === "string" ? record.hotelPernocta : null,
+    pipelineId:
+      typeof record.pipelineId === "number" && Number.isFinite(record.pipelineId) ? record.pipelineId : null,
+    pipelineName: typeof record.pipelineName === "string" ? record.pipelineName : null,
+    wonDate: typeof record.wonDate === "string" ? record.wonDate : null,
+    formations: toStringArray(record.formations),
+    trainingProducts: toDealProductArray(record.trainingProducts),
+    extraProducts: toDealProductArray(record.extraProducts),
+    notes: toDealNoteArray(record.notes),
+    attachments: toDealAttachmentArray(record.attachments)
+  } satisfies DealRecord;
+};
+
+const readStoredDeal = async (dealId: number): Promise<DealRecord | null> => {
+  if (!Number.isFinite(dealId)) {
+    return null;
+  }
+
+  const storedInMemory = inMemoryDeals.get(dealId);
+  if (!db) {
+    return storedInMemory ? storedInMemory.deal : null;
+  }
+
+  const ensured = await ensurePipedriveDealsTable();
+  if (!ensured) {
+    return storedInMemory ? storedInMemory.deal : null;
+  }
+
+  try {
+    const result = await db
+      .select({ data: pipedriveDeals.data })
+      .from(pipedriveDeals)
+      .where(eq(pipedriveDeals.dealId, dealId))
+      .limit(1);
+
+    if (result.length === 0) {
+      return storedInMemory ? storedInMemory.deal : null;
+    }
+
+    const sanitized = sanitizeStoredDealRecord(result[0]?.data);
+    if (sanitized) {
+      inMemoryDeals.set(dealId, { deal: sanitized, updatedAt: new Date().toISOString() });
+    }
+    return sanitized;
+  } catch (error) {
+    console.error(`No se pudo leer el deal ${dealId} desde la base de datos`, error);
+    return storedInMemory ? storedInMemory.deal : null;
+  }
+};
+
+const listStoredDeals = async (): Promise<DealRecord[]> => {
+  if (!db) {
+    return readDealsFromMemory();
+  }
+
+  const ensured = await ensurePipedriveDealsTable();
+  if (!ensured) {
+    return readDealsFromMemory();
+  }
+
+  try {
+    const result = await db
+      .select({ data: pipedriveDeals.data })
+      .from(pipedriveDeals)
+      .orderBy(desc(pipedriveDeals.updatedAt), desc(pipedriveDeals.dealId));
+
+    const deals: DealRecord[] = [];
+    result.forEach((entry) => {
+      const sanitized = sanitizeStoredDealRecord(entry.data);
+      if (sanitized) {
+        deals.push(sanitized);
+        inMemoryDeals.set(sanitized.id, { deal: sanitized, updatedAt: new Date().toISOString() });
+      }
+    });
+    return deals;
+  } catch (error) {
+    console.error("No se pudo leer la lista de deals almacenados", error);
+    return readDealsFromMemory();
+  }
+};
+
+const saveDealRecord = async (deal: DealRecord): Promise<void> => {
+  const now = new Date();
+  inMemoryDeals.set(deal.id, { deal, updatedAt: now.toISOString() });
+
+  if (!db) {
+    return;
+  }
+
+  const ensured = await ensurePipedriveDealsTable();
+  if (!ensured) {
+    return;
+  }
+
+  try {
+    await db
+      .insert(pipedriveDeals)
+      .values({
+        dealId: deal.id,
+        title: deal.title,
+        clientName: deal.clientName ?? null,
+        pipelineId: deal.pipelineId ?? null,
+        pipelineName: deal.pipelineName ?? null,
+        wonDate: deal.wonDate ?? null,
+        data: deal as unknown as Record<string, unknown>,
+        updatedAt: now
+      })
+      .onConflictDoUpdate({
+        target: pipedriveDeals.dealId,
+        set: {
+          title: deal.title,
+          clientName: deal.clientName ?? null,
+          pipelineId: deal.pipelineId ?? null,
+          pipelineName: deal.pipelineName ?? null,
+          wonDate: deal.wonDate ?? null,
+          data: deal as unknown as Record<string, unknown>,
+          updatedAt: now
+        }
+      });
+  } catch (error) {
+    console.error(`No se pudo guardar el deal ${deal.id} en la base de datos`, error);
+  }
+};
+
+const deleteStoredDeal = async (dealId: number): Promise<boolean> => {
+  const removedFromMemory = inMemoryDeals.delete(dealId);
+
+  if (!db) {
+    return removedFromMemory;
+  }
+
+  const ensured = await ensurePipedriveDealsTable();
+  if (!ensured) {
+    return removedFromMemory;
+  }
+
+  try {
+    const result = await db
+      .delete(pipedriveDeals)
+      .where(eq(pipedriveDeals.dealId, dealId))
+      .returning({ dealId: pipedriveDeals.dealId });
+
+    return result.length > 0 || removedFromMemory;
+  } catch (error) {
+    console.error(`No se pudo eliminar el deal ${dealId} de la base de datos`, error);
+    return removedFromMemory;
+  }
+};
+
 const SHARED_STATE_KEYS = {
   calendarEvents: "calendar-events",
   manualDeals: "manual-deals",
   hiddenDeals: "hidden-deals",
   dealExtras: "deal-extras"
 } as const;
+
+const parseBooleanFlag = (value: string | null): boolean => {
+  if (!value) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+};
+
+const parseDealIdentifier = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
 
 const sanitizeNumberList = (value: unknown): number[] => {
   if (!Array.isArray(value)) {
@@ -1562,6 +1863,87 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
   };
 };
 
+let pipedriveSyncPromise: Promise<void> | null = null;
+
+const synchronizeDealsFromPipedrive = async (
+  options: { force?: boolean; knownDeals?: DealRecord[] } = {}
+): Promise<void> => {
+  const shouldForce = options.force ?? false;
+  const knownDeals = options.knownDeals ?? [];
+  const knownDealIds = new Set(knownDeals.map((deal) => deal.id));
+
+  const executeSync = async () => {
+    let remoteDeals: unknown[];
+    try {
+      remoteDeals = await listDealsUpdatedDesc(100);
+    } catch (error) {
+      console.error("No se pudo obtener la lista de deals desde Pipedrive", error);
+      return;
+    }
+
+    const identifiers: number[] = [];
+    remoteDeals.forEach((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+
+      const record = entry as Record<string, unknown>;
+      const identifier = parseDealIdentifier(record.id);
+
+      if (identifier !== null) {
+        identifiers.push(identifier);
+      }
+    });
+
+    const uniqueIdentifiers = Array.from(new Set(identifiers));
+
+    for (const dealId of uniqueIdentifiers) {
+      if (!shouldForce && knownDealIds.has(dealId)) {
+        continue;
+      }
+
+      try {
+        const rawDeal = await getDealById(dealId);
+
+        if (!rawDeal) {
+          await deleteStoredDeal(dealId);
+          continue;
+        }
+
+        if (typeof rawDeal !== "object" || rawDeal === null) {
+          throw new Error("Respuesta inesperada al obtener un deal desde Pipedrive");
+        }
+
+        const deal = mapPipedriveDealToRecord(rawDeal as Record<string, unknown>);
+        await saveDealRecord(deal);
+      } catch (error) {
+        console.error(`No se pudo sincronizar el deal ${dealId} desde Pipedrive`, error);
+      }
+    }
+  };
+
+  if (shouldForce && pipedriveSyncPromise) {
+    try {
+      await pipedriveSyncPromise;
+    } catch (error) {
+      console.error("La sincronización anterior de deals finalizó con errores", error);
+    }
+    pipedriveSyncPromise = null;
+  }
+
+  if (!pipedriveSyncPromise) {
+    pipedriveSyncPromise = executeSync().finally(() => {
+      pipedriveSyncPromise = null;
+    });
+  }
+
+  try {
+    await pipedriveSyncPromise;
+  } catch (error) {
+    console.error("La sincronización de deals con Pipedrive falló", error);
+  }
+};
+
 const app = new Hono().basePath("/.netlify/functions/api");
 app.use("*", cors());
 
@@ -1684,15 +2066,15 @@ app.put("/deal-extras", async (c) => {
   return c.json({ ok: true, dealId, extras, updatedAt: new Date().toISOString() });
 });
 
-const sampleDeals: DealRecord[] = [];
-
 // Health
 app.get("/health", (c) => c.json({ ok: true, at: new Date().toISOString() }));
 
-// Listado y detalle básico de deals (sin BD, datos de ejemplo)
+// Listado y detalle de deals (persistidos en BD)
 app.get("/deals", async (c) => {
   const url = new URL(c.req.url);
   const dealIdParam = url.searchParams.get("dealId");
+  const refreshParam = url.searchParams.get("refresh");
+  const forceRefresh = parseBooleanFlag(refreshParam);
 
   if (dealIdParam) {
     const dealId = Number.parseInt(dealIdParam, 10);
@@ -1701,10 +2083,17 @@ app.get("/deals", async (c) => {
       return c.json({ deal: null, message: "El identificador de presupuesto no es válido." }, 400);
     }
 
+    const storedDeal = await readStoredDeal(dealId);
+
+    if (!forceRefresh && storedDeal) {
+      return c.json({ deal: storedDeal, refreshed: false });
+    }
+
     try {
       const rawDeal = await getDealById(dealId);
 
       if (!rawDeal) {
+        await deleteStoredDeal(dealId);
         return c.json(
           { deal: null, message: "No se encontró el presupuesto solicitado." },
           404
@@ -1716,9 +2105,19 @@ app.get("/deals", async (c) => {
       }
 
       const deal = mapPipedriveDealToRecord(rawDeal as Record<string, unknown>);
-      return c.json({ deal });
+      await saveDealRecord(deal);
+      return c.json({ deal, refreshed: true });
     } catch (error) {
       console.error(`Error al consultar el deal ${dealId} en Pipedrive`, error);
+
+      if (storedDeal) {
+        return c.json({
+          deal: storedDeal,
+          refreshed: false,
+          message: "Se devolvió la versión almacenada del presupuesto porque no se pudo actualizar desde Pipedrive."
+        });
+      }
+
       return c.json(
         { deal: null, message: "No se pudo obtener el presupuesto desde Pipedrive." },
         502
@@ -1726,7 +2125,59 @@ app.get("/deals", async (c) => {
     }
   }
 
-  return c.json({ deals: sampleDeals, page: 1, limit: sampleDeals.length });
+  let deals = await listStoredDeals();
+
+  if (forceRefresh || deals.length === 0) {
+    await synchronizeDealsFromPipedrive({ force: forceRefresh, knownDeals: deals });
+    deals = await listStoredDeals();
+  }
+
+  return c.json({ deals, page: 1, limit: deals.length });
+});
+
+app.put("/deals", async (c) => {
+  let payload: unknown;
+
+  try {
+    payload = await c.req.json();
+  } catch (error) {
+    console.error("No se pudo leer el cuerpo de la solicitud de actualización de deal", error);
+    return c.json({ ok: false, message: "No se pudo leer la información del presupuesto." }, 400);
+  }
+
+  const input = (payload as { deal?: unknown }).deal ?? payload;
+  const deal = sanitizeStoredDealRecord(input);
+
+  if (!deal) {
+    return c.json({ ok: false, message: "Los datos del presupuesto no son válidos." }, 400);
+  }
+
+  await saveDealRecord(deal);
+  return c.json({ ok: true, deal, updatedAt: new Date().toISOString() });
+});
+
+app.delete("/deals", async (c) => {
+  const url = new URL(c.req.url);
+  const dealIdParam = url.searchParams.get("dealId");
+
+  if (!dealIdParam) {
+    return c.json({ ok: false, message: "Debes indicar el identificador del presupuesto." }, 400);
+  }
+
+  const dealId = Number.parseInt(dealIdParam, 10);
+
+  if (!Number.isFinite(dealId)) {
+    return c.json({ ok: false, message: "El identificador del presupuesto no es válido." }, 400);
+  }
+
+  const existingDeal = await readStoredDeal(dealId);
+  const removed = await deleteStoredDeal(dealId);
+
+  if (!removed && !existingDeal) {
+    return c.json({ ok: false, message: "No se encontró el presupuesto indicado." }, 404);
+  }
+
+  return c.json({ ok: true, dealId, removedAt: new Date().toISOString() });
 });
 
 // Handler manual (evita el adapter y problemas de path)

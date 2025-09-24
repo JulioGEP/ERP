@@ -17,6 +17,7 @@ import {
   fetchDeals,
   fetchSharedHiddenDealIds,
   fetchSharedManualDeals,
+  deleteDeal,
   DealRecord,
   countSessionsForProduct,
   loadHiddenDealIds,
@@ -704,7 +705,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     );
   };
 
-  const handleRemoveDeal = (dealId: number) => {
+  const handleRemoveDeal = async (dealId: number) => {
     const confirmed = window.confirm(
       '¿Quieres eliminar este deal de la lista de "Presupuestos"? Podrás recuperarlo subiéndolo de nuevo.'
     );
@@ -714,6 +715,22 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     }
 
     const hadScheduledEvents = events.some((event) => event.dealId === dealId);
+
+    setFeedback(null);
+
+    try {
+      await deleteDeal(dealId);
+    } catch (error) {
+      console.error('No se pudo eliminar el presupuesto indicado', error);
+      setFeedback({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'No se pudo eliminar el presupuesto seleccionado. Inténtalo de nuevo más tarde.'
+      });
+      return;
+    }
 
     setHiddenDealIds((previous) => {
       if (previous.includes(dealId)) {
@@ -744,7 +761,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   };
 
   const uploadDeal = useMutation({
-    mutationFn: fetchDealById,
+    mutationFn: (dealId: number) => fetchDealById(dealId, { refresh: true }),
     onSuccess: (deal) => {
       setFeedback({
         type: 'success',
@@ -980,7 +997,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
                           size="sm"
                           onClick={(event) => {
                             event.stopPropagation();
-                            handleRemoveDeal(deal.id);
+                            void handleRemoveDeal(deal.id);
                           }}
                         >
                           Eliminar
@@ -1019,7 +1036,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
           onUpdateSchedule={onUpdateSchedule}
           onDealRefetch={async () => {
             try {
-              const refreshed = await fetchDealById(selectedDeal.id);
+              const refreshed = await fetchDealById(selectedDeal.id, { refresh: true });
               registerManualDeal(refreshed);
               queryClient.setQueryData<DealRecord[]>(['deals', 'stage-3'], (previous) => {
                 const current = previous ?? [];

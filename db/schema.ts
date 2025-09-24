@@ -37,6 +37,18 @@ export const deals = pgTable("deals", {
   updatedAt: timestamp("updated_at").defaultNow()
 });
 
+export const pipedriveDeals = pgTable("pipedrive_deals", {
+  dealId: integer("deal_id").primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  clientName: varchar("client_name", { length: 255 }),
+  pipelineId: integer("pipeline_id"),
+  pipelineName: varchar("pipeline_name", { length: 255 }),
+  wonDate: varchar("won_date", { length: 128 }),
+  data: jsonb("data").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
 export const calendarEvents = pgTable("calendar_events", {
   id: serial("id").primaryKey(),
   dealId: integer("deal_id").references(() => deals.id),
