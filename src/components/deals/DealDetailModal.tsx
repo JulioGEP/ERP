@@ -1341,9 +1341,7 @@ const DealDetailModal = ({
       }
 
       if (endDate.getTime() < startDate.getTime()) {
-        setSaveError(
-          'Hay sesiones donde la fecha de fin es anterior a la fecha de inicio. Por favor avisa al comercial.'
-        );
+        setSaveError('Hay sesiones donde la fecha de fin es anterior a la fecha de inicio.');
         return;
       }
 
