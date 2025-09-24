@@ -1423,6 +1423,7 @@ const parseDealProducts = (
         "sku_code"
       ]);
       const code = toOptionalText(codeValue);
+      const normalizedCode = typeof code === "string" ? code.trim().toLocaleLowerCase("es") : null;
 
       const quantityValue = findFirstValue(candidateRecords, [
         "quantity",
@@ -1528,28 +1529,31 @@ const parseDealProducts = (
       ]);
 
       let isTraining =
-        toOptionalBoolean(trainingIndicatorValue) ??
-        (() => {
-          const text = toOptionalText(trainingIndicatorValue);
-          if (!text) {
-            return null;
-          }
+        normalizedCode !== null
+          ? normalizedCode.startsWith("form-")
+          :
+            toOptionalBoolean(trainingIndicatorValue) ??
+              (() => {
+                const text = toOptionalText(trainingIndicatorValue);
+                if (!text) {
+                  return null;
+                }
 
-          const normalized = normaliseComparisonText(text);
-          if (["training", "formacion", "formacion", "curso", "formativa"].some((token) =>
-            normalized.includes(token)
-          )) {
-            return true;
-          }
+                const normalized = normaliseComparisonText(text);
+                if (["training", "formacion", "formacion", "curso", "formativa"].some((token) =>
+                  normalized.includes(token)
+                )) {
+                  return true;
+                }
 
-          if (["extra", "adicional", "complemento", "material", "otros"].some((token) =>
-            normalized.includes(token)
-          )) {
-            return false;
-          }
+                if (["extra", "adicional", "complemento", "material", "otros"].some((token) =>
+                  normalized.includes(token)
+                )) {
+                  return false;
+                }
 
-          return null;
-        })();
+                return null;
+              })();
 
       if (isTraining === null) {
         const extraBoolean = toOptionalBoolean(extraIndicatorValue);
@@ -1842,6 +1846,28 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
   const trainingProducts = products.filter((product) => product.isTraining);
   const extraProducts = products.filter((product) => !product.isTraining);
 
+  const formationMap = new Map<string, string>();
+  const registerFormation = (value: string | null | undefined) => {
+    if (typeof value !== "string") {
+      return;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    const normalized = normaliseComparisonText(trimmed);
+    if (!formationMap.has(normalized)) {
+      formationMap.set(normalized, trimmed);
+    }
+  };
+
+  formations.forEach((item) => registerFormation(item));
+  trainingProducts.forEach((product) => registerFormation(product.name));
+
+  const combinedFormations = Array.from(formationMap.values());
+
   return {
     id: dealId,
     title: toStringWithFallback(deal["title"], `Presupuesto #${dealId}`),
@@ -1855,7 +1881,7 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     pipelineId,
     pipelineName: pipelineName ?? null,
     wonDate,
-    formations,
+    formations: combinedFormations,
     trainingProducts,
     extraProducts,
     notes,
