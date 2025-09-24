@@ -14,7 +14,13 @@ type DealResponse = {
 };
 
 export async function getDealById(dealId: number) {
-  const url = `${BASE}/deals/${dealId}?api_token=${TOKEN}`;
+  const url = new URL(`${BASE}/deals/${dealId}`);
+  url.searchParams.set("api_token", TOKEN);
+  url.searchParams.set("include_products", "1");
+  url.searchParams.set("include_notes", "1");
+  url.searchParams.set("include_files", "1");
+  url.searchParams.set("include_related_objects", "1");
+
   const res = await fetch(url);
 
   if (res.status === 404) {
