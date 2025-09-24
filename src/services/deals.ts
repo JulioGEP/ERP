@@ -61,6 +61,82 @@ export interface DealRecord {
   attachments: DealAttachment[];
 }
 
+const FORMATION_CODE_FRAGMENT = 'form-';
+
+const normaliseProductCode = (code: string | null | undefined): string | null => {
+  if (typeof code !== 'string') {
+    return null;
+  }
+
+  const trimmed = code.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  return trimmed.toLocaleLowerCase('es');
+};
+
+const registerFormationLabel = (map: Map<string, string>, value: string | null | undefined) => {
+  if (typeof value !== 'string') {
+    return;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return;
+  }
+
+  const normalized = trimmed.toLocaleLowerCase('es');
+  if (!map.has(normalized)) {
+    map.set(normalized, trimmed);
+  }
+};
+
+export const splitDealProductsByCode = (
+  input: Pick<DealRecord, 'trainingProducts' | 'extraProducts'>
+): { trainingProducts: DealProduct[]; extraProducts: DealProduct[] } => {
+  const seen = new Set<number>();
+  const training: DealProduct[] = [];
+  const extras: DealProduct[] = [];
+
+  const classify = (product: DealProduct) => {
+    if (seen.has(product.dealProductId)) {
+      return;
+    }
+
+    seen.add(product.dealProductId);
+    const normalizedCode = normaliseProductCode(product.code);
+
+    if (normalizedCode && normalizedCode.includes(FORMATION_CODE_FRAGMENT)) {
+      training.push(product);
+    } else {
+      extras.push(product);
+    }
+  };
+
+  input.trainingProducts.forEach(classify);
+  input.extraProducts.forEach(classify);
+
+  return { trainingProducts: training, extraProducts: extras };
+};
+
+export const buildDealFormationLabels = (
+  formations: string[],
+  trainingProducts: DealProduct[]
+): string[] => {
+  const map = new Map<string, string>();
+
+  formations.forEach((value) => {
+    registerFormationLabel(map, value);
+  });
+
+  trainingProducts.forEach((product) => {
+    registerFormationLabel(map, product.name);
+  });
+
+  return Array.from(map.values());
+};
+
 type DealsResponse = {
   deals?: unknown;
 };

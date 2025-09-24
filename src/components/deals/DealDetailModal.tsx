@@ -23,9 +23,10 @@ import {
 import {
   DealAttachment,
   DealNote,
-  DealProduct,
   DealRecord,
-  countSessionsForProduct
+  buildDealFormationLabels,
+  countSessionsForProduct,
+  splitDealProductsByCode
 } from '../../services/deals';
 import {
   fetchDealExtras,
@@ -487,11 +488,25 @@ const DealDetailModal = ({
     };
   }, [attachmentPreviewUrl]);
 
+  const { trainingProducts, extraProducts } = useMemo(
+    () =>
+      splitDealProductsByCode({
+        trainingProducts: deal.trainingProducts,
+        extraProducts: deal.extraProducts
+      }),
+    [deal.extraProducts, deal.trainingProducts]
+  );
+
+  const formationLabels = useMemo(
+    () => buildDealFormationLabels(deal.formations, trainingProducts),
+    [deal.formations, trainingProducts]
+  );
+
   const productMap = useMemo(() => {
     const byDealProductId = new Map<number, string>();
     const byProductId = new Map<number, string>();
 
-    [...deal.trainingProducts, ...deal.extraProducts].forEach((product) => {
+    [...trainingProducts, ...extraProducts].forEach((product) => {
       byDealProductId.set(product.dealProductId, product.name);
       if (product.productId != null) {
         byProductId.set(product.productId, product.name);
@@ -499,7 +514,7 @@ const DealDetailModal = ({
     });
 
     return { byDealProductId, byProductId };
-  }, [deal.extraProducts, deal.trainingProducts]);
+  }, [extraProducts, trainingProducts]);
 
   useEffect(() => {
     const extras = loadDealExtras(deal.id);
@@ -603,7 +618,7 @@ const DealDetailModal = ({
   }, [deal.id, events]);
 
   const initialSessions = useMemo(() => {
-    return deal.trainingProducts.flatMap((product) => {
+    return trainingProducts.flatMap((product) => {
       const sessionsCount = countSessionsForProduct(product);
       return Array.from({ length: sessionsCount }).map((_, index) => {
         const key = `${product.dealProductId}-${index}`;
@@ -642,7 +657,7 @@ const DealDetailModal = ({
         } satisfies SessionFormEntry;
       });
     });
-  }, [deal.address, deal.sede, deal.trainingProducts, eventsByKey]);
+  }, [deal.address, deal.sede, eventsByKey, trainingProducts]);
 
   const [sessions, setSessions] = useState<SessionFormEntry[]>(initialSessions);
 
@@ -663,13 +678,13 @@ const DealDetailModal = ({
   );
 
   const initialRecommendedHoursByProduct = useMemo(() => {
-    const entries = deal.trainingProducts.map((product) => [
+    const entries = trainingProducts.map((product) => [
       product.dealProductId,
       product.recommendedHours != null ? String(product.recommendedHours) : ''
     ]);
 
     return Object.fromEntries(entries) as Record<number, string>;
-  }, [deal.trainingProducts]);
+  }, [trainingProducts]);
 
   const [recommendedHoursByProduct, setRecommendedHoursByProduct] = useState(
     initialRecommendedHoursByProduct
@@ -771,7 +786,7 @@ const DealDetailModal = ({
 
   const notesCount = combinedNotes.length;
   const attachmentsCount = combinedAttachments.length;
-  const extraProductsCount = deal.extraProducts.length;
+  const extraProductsCount = extraProducts.length;
 
   const handleRecommendedHoursChange = (dealProductId: number, value: string) => {
     setRecommendedHoursByProduct((previous) => ({
@@ -1034,7 +1049,7 @@ const DealDetailModal = ({
     const sanitizedFundae = sanitizeOptionalDealText(deal.fundae);
     const sanitizedCaes = sanitizeOptionalDealText(deal.caes);
     const sanitizedHotelPernocta = sanitizeOptionalDealText(deal.hotelPernocta);
-    const sanitizedFormations = sanitizeSelectionList(deal.formations);
+    const sanitizedFormations = sanitizeSelectionList(formationLabels);
 
     for (const session of sessions) {
       const startIso = toIsoString(session.start);
@@ -1081,14 +1096,14 @@ const DealDetailModal = ({
   };
 
   const productOptions = useMemo(() => {
-    const options = [...deal.trainingProducts, ...deal.extraProducts];
+    const options = [...trainingProducts, ...extraProducts];
     return options.map((product) => ({
       label: product.name,
       value: `product-${product.dealProductId}`,
       dealProductId: product.dealProductId,
       productId: product.productId ?? null
     }));
-  }, [deal.extraProducts, deal.trainingProducts]);
+  }, [extraProducts, trainingProducts]);
 
   const handleSubmitNote = (): boolean => {
     if (noteModalMode === 'view') {
@@ -1404,7 +1419,7 @@ const DealDetailModal = ({
                       </Col>
                     </Row>
                     <div>
-                      {deal.trainingProducts.length > 0 ? (
+                      {trainingProducts.length > 0 ? (
                         <>
                           <Row className="g-2 align-items-center text-uppercase text-muted small mb-2">
                             <Col md={8} sm={7}>Formación</Col>
@@ -1413,7 +1428,7 @@ const DealDetailModal = ({
                             </Col>
                           </Row>
                           <Stack gap={2}>
-                            {deal.trainingProducts.map((product) => (
+                            {trainingProducts.map((product) => (
                               <Row key={product.dealProductId} className="g-2 align-items-center">
                                 <Col md={8} sm={7}>
                                   <div className="fw-semibold text-truncate" title={product.name}>
@@ -1704,7 +1719,7 @@ const DealDetailModal = ({
                                 </tr>
                               </thead>
                               <tbody>
-                                {deal.extraProducts.map((product) => (
+                                {extraProducts.map((product) => (
                                   <tr key={`extra-${product.dealProductId}`}>
                                     <td>{product.name}</td>
                                     <td>{product.quantity}</td>
@@ -1759,11 +1774,11 @@ const DealDetailModal = ({
                 </Alert>
               )}
 
-              {deal.trainingProducts.length === 0 ? (
+              {trainingProducts.length === 0 ? (
                 <div className="text-muted">No hay productos de formación disponibles para calendarizar.</div>
               ) : (
                 <Stack gap={3}>
-                  {deal.trainingProducts.map((product) => {
+                  {trainingProducts.map((product) => {
                     const productSessions = sessions.filter((session) => session.dealProductId === product.dealProductId);
                     const sessionCount = countSessionsForProduct(product);
                     return (
@@ -2061,7 +2076,7 @@ const DealDetailModal = ({
             <Button
               variant="primary"
               onClick={handleSaveSchedule}
-              disabled={isBusy || deal.trainingProducts.length === 0}
+              disabled={isBusy || trainingProducts.length === 0}
             >
               Guardar en calendario
             </Button>
