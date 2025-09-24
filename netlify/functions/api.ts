@@ -315,6 +315,86 @@ const normaliseComparisonText = (value: string): string =>
     .trim()
     .toLowerCase();
 
+const BOOLEAN_SINGLE_OPTION_TRUE_VALUES = new Set([
+  "1",
+  "si",
+  "s",
+  "yes",
+  "true"
+]);
+
+const BOOLEAN_SINGLE_OPTION_FALSE_VALUES = new Set([
+  "0",
+  "2",
+  "no",
+  "n",
+  "false"
+]);
+
+const SINGLE_OPTION_SEDE_MAPPING: Record<string, string> = (() => {
+  const entries: [string, string][] = [
+    ["1", "GEP Arganda"],
+    ["C/ Primavera, 1, 28500, Arganda del Rey, Madrid", "GEP Arganda"],
+    ["GEP Arganda", "GEP Arganda"],
+    ["2", "GEP Sabadell"],
+    ["C/ Moratín, 100, 08206 Sabadell, Barcelona", "GEP Sabadell"],
+    ["GEP Sabadell", "GEP Sabadell"],
+    ["3", "Incompany"],
+    ["4", "Incompany"],
+    ["C/ Hungría, 11 Nave 1B. 11011, Cádiz", "Incompany"],
+    ["In Company - Unidad Móvil", "Incompany"],
+    ["In Company Unidad Móvil", "Incompany"],
+    ["In Company", "Incompany"],
+    ["Unidad Móvil", "Incompany"],
+    ["Unidad Movil", "Incompany"],
+    ["Incompany", "Incompany"]
+  ];
+
+  const mapping: Record<string, string> = {};
+
+  entries.forEach(([key, value]) => {
+    mapping[normaliseComparisonText(key)] = value;
+  });
+
+  return mapping;
+})();
+
+const mapSingleOptionBooleanValue = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = normaliseComparisonText(value);
+
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  if (BOOLEAN_SINGLE_OPTION_TRUE_VALUES.has(normalized)) {
+    return "Si";
+  }
+
+  if (BOOLEAN_SINGLE_OPTION_FALSE_VALUES.has(normalized)) {
+    return "No";
+  }
+
+  return value;
+};
+
+const mapSedeValue = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = normaliseComparisonText(value);
+
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  return SINGLE_OPTION_SEDE_MAPPING[normalized] ?? value;
+};
+
 const toOptionalText = (value: unknown): string | null => {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -1327,7 +1407,7 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     toOptionalString(deal["won_date"]) ??
     toOptionalString(deal["wonTime"]);
 
-  const sede = toOptionalFieldText(
+  const rawSede = toOptionalFieldText(
     findFirstValue(dealRecords, [
       "sede",
       "sede.name",
@@ -1343,7 +1423,7 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     ])
   );
 
-  const caes = toOptionalFieldText(
+  const rawCaes = toOptionalFieldText(
     findFirstValue(dealRecords, [
       "caes",
       "caes.name",
@@ -1359,7 +1439,7 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     ])
   );
 
-  const fundae = toOptionalFieldText(
+  const rawFundae = toOptionalFieldText(
     findFirstValue(dealRecords, [
       "fundae",
       "fundae.name",
@@ -1375,7 +1455,7 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     ])
   );
 
-  const hotelPernocta = toOptionalFieldText(
+  const rawHotelPernocta = toOptionalFieldText(
     findFirstValue(dealRecords, [
       "hotelPernocta",
       "hotel_pernocta",
@@ -1392,6 +1472,11 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
       "additionalData.fields.c3a6daf8eb5b4e59c3c07cda8e01f43439101269"
     ])
   );
+
+  const sede = mapSedeValue(rawSede);
+  const caes = mapSingleOptionBooleanValue(rawCaes);
+  const fundae = mapSingleOptionBooleanValue(rawFundae);
+  const hotelPernocta = mapSingleOptionBooleanValue(rawHotelPernocta);
 
   const formations = parseDealFormations(deal);
   const notes: DealNote[] = [];
