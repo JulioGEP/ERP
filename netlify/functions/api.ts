@@ -641,15 +641,15 @@ const SINGLE_OPTION_SEDE_MAPPING: Record<string, string> = (() => {
     ["2", "GEP Sabadell"],
     ["C/ Moratín, 100, 08206 Sabadell, Barcelona", "GEP Sabadell"],
     ["GEP Sabadell", "GEP Sabadell"],
-    ["3", "Incompany"],
-    ["4", "Incompany"],
-    ["C/ Hungría, 11 Nave 1B. 11011, Cádiz", "Incompany"],
-    ["In Company - Unidad Móvil", "Incompany"],
-    ["In Company Unidad Móvil", "Incompany"],
-    ["In Company", "Incompany"],
-    ["Unidad Móvil", "Incompany"],
-    ["Unidad Movil", "Incompany"],
-    ["Incompany", "Incompany"]
+    ["3", "In Company"],
+    ["4", "In Company"],
+    ["C/ Hungría, 11 Nave 1B. 11011, Cádiz", "In Company"],
+    ["In Company - Unidad Móvil", "In Company"],
+    ["In Company Unidad Móvil", "In Company"],
+    ["In Company", "In Company"],
+    ["Unidad Móvil", "In Company"],
+    ["Unidad Movil", "In Company"],
+    ["Incompany", "In Company"]
   ];
 
   const mapping: Record<string, string> = {};
