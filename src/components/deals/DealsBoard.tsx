@@ -188,9 +188,14 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     }
 
     setManualDeals((previous) =>
-      previous.filter((manualDeal) => !data.some((dealItem) => dealItem.id === manualDeal.id))
+      previous.filter(
+        (manualDeal) =>
+          !data.some(
+            (dealItem) => dealItem.id === manualDeal.id && hasPendingSessions(dealItem)
+          )
+      )
     );
-  }, [data]);
+  }, [data, hasPendingSessions]);
 
   useEffect(() => {
     persistStoredManualDeals(manualDeals);
@@ -280,6 +285,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
 
   const dealsWithManual = useMemo<DealRecord[]>(() => {
     const map = new Map<number, DealRecord>();
+    const manualDealIds = new Set(manualDeals.map((deal) => deal.id));
 
     (data ?? []).forEach((deal) => {
       if (!hiddenDealIdSet.has(deal.id)) {
@@ -293,7 +299,9 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
       }
     });
 
-    return Array.from(map.values()).filter((deal) => hasPendingSessions(deal));
+    return Array.from(map.values()).filter(
+      (deal) => manualDealIds.has(deal.id) || hasPendingSessions(deal)
+    );
   }, [data, manualDeals, hiddenDealIdSet, hasPendingSessions]);
 
   const availableTrainers = useMemo(() => {
