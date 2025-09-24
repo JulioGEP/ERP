@@ -183,21 +183,6 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   });
 
   useEffect(() => {
-    if (!data || data.length === 0) {
-      return;
-    }
-
-    setManualDeals((previous) =>
-      previous.filter(
-        (manualDeal) =>
-          !data.some(
-            (dealItem) => dealItem.id === manualDeal.id && hasPendingSessions(dealItem)
-          )
-      )
-    );
-  }, [data, hasPendingSessions]);
-
-  useEffect(() => {
     persistStoredManualDeals(manualDeals);
   }, [manualDeals]);
 
@@ -282,6 +267,21 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
     },
     [scheduledSessionsByKey]
   );
+
+  useEffect(() => {
+    if (!data || data.length === 0) {
+      return;
+    }
+
+    setManualDeals((previous) =>
+      previous.filter(
+        (manualDeal) =>
+          !data.some(
+            (dealItem) => dealItem.id === manualDeal.id && hasPendingSessions(dealItem)
+          )
+      )
+    );
+  }, [data, hasPendingSessions]);
 
   const dealsWithManual = useMemo<DealRecord[]>(() => {
     const map = new Map<number, DealRecord>();
