@@ -68,6 +68,83 @@ interface SessionFormEntry {
 
 type DisplayNote = DealNote & { shareWithTrainer?: boolean | null };
 type DisplayAttachment = DealAttachment;
+
+const DOCUMENT_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'text/plain',
+  'text/csv'
+]);
+
+const DOCUMENT_MIME_PREFIXES = ['application/vnd.oasis.opendocument', 'application/vnd.openxmlformats'];
+
+const DOCUMENT_EXTENSIONS = new Set([
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'odt',
+  'ods',
+  'odp',
+  'txt',
+  'csv'
+]);
+
+const extractExtension = (value: string | null | undefined): string | null => {
+  if (typeof value !== 'string' || value.length === 0) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    const pathname = url.pathname;
+    const match = /\.([^.\\/]+)$/.exec(pathname);
+    if (match) {
+      return match[1].toLowerCase();
+    }
+  } catch {
+    const match = /\.([^.\\/]+)$/.exec(value);
+    if (match) {
+      return match[1].toLowerCase();
+    }
+  }
+
+  return null;
+};
+
+const isDocumentAttachment = (attachment: DisplayAttachment): boolean => {
+  const normalizedMime = attachment.fileType?.toLowerCase() ?? null;
+  if (normalizedMime) {
+    if (DOCUMENT_MIME_TYPES.has(normalizedMime)) {
+      return true;
+    }
+
+    if (DOCUMENT_MIME_PREFIXES.some((prefix) => normalizedMime.startsWith(prefix))) {
+      return true;
+    }
+  }
+
+  const extensionSources = [attachment.name, attachment.downloadUrl, attachment.url];
+  for (const source of extensionSources) {
+    const extension = extractExtension(source);
+    if (extension && DOCUMENT_EXTENSIONS.has(extension)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 type ShareWithTrainerOption = 'yes' | 'no';
 
 const normaliseNotePlainText = (value: string): string =>
@@ -923,7 +1000,8 @@ const DealDetailModal = ({
 
   const combinedAttachments: DisplayAttachment[] = useMemo(() => {
     const joined = [...deal.attachments, ...localAttachmentEntries];
-    return joined.sort((a, b) => {
+    const filtered = joined.filter(isDocumentAttachment);
+    return filtered.sort((a, b) => {
       const left = a.addedAt ?? '';
       const right = b.addedAt ?? '';
       return right.localeCompare(left);
