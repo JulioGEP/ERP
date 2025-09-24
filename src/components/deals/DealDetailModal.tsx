@@ -1218,10 +1218,16 @@ const DealDetailModal = ({
       return;
     }
 
-    const incomplete = sessions.filter((session) => !session.start || !session.end);
+    const sessionsWithPartialDates = sessions.filter((session) => {
+      const hasStart = session.start.trim().length > 0;
+      const hasEnd = session.end.trim().length > 0;
+      return hasStart !== hasEnd;
+    });
 
-    if (incomplete.length > 0) {
-      setSaveError('Todas las sesiones deben tener fecha y hora de inicio y fin.');
+    if (sessionsWithPartialDates.length > 0) {
+      setSaveError(
+        'Todas las sesiones deben tener fecha y hora de inicio y fin o dejar ambos campos vacíos.'
+      );
       return;
     }
 
@@ -1233,6 +1239,13 @@ const DealDetailModal = ({
     const sanitizedFormations = sanitizeSelectionList(formationLabels);
 
     for (const session of sessions) {
+      const hasStart = session.start.trim().length > 0;
+      const hasEnd = session.end.trim().length > 0;
+
+      if (!hasStart && !hasEnd) {
+        continue;
+      }
+
       const startIso = toIsoString(session.start);
       const endIso = toIsoString(session.end);
 
