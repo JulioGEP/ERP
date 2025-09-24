@@ -269,6 +269,39 @@ const toStringList = (value: unknown): string[] => {
   return Array.from(set);
 };
 
+const toOptionalFieldText = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    const parts = toStringList(value);
+    if (parts.length === 0) {
+      return null;
+    }
+
+    return parts.join(", ");
+  }
+
+  const direct = toOptionalText(value);
+  if (direct) {
+    return direct;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return (
+      toOptionalText(record.label) ??
+      toOptionalText(record.name) ??
+      toOptionalText(record.value) ??
+      toOptionalText(record.text) ??
+      toOptionalText(record.title)
+    );
+  }
+
+  return null;
+};
+
 const pushUniqueNote = (collection: DealNote[], note: DealNote) => {
   if (!collection.some((existing) => existing.id === note.id)) {
     collection.push(note);
@@ -321,7 +354,9 @@ const collectProductRecords = (record: Record<string, unknown>): Record<string, 
       "product_item",
       "productItem",
       "details",
-      "data"
+      "data",
+      "related_objects",
+      "relatedObjects"
     ];
 
     nestedKeys.forEach((key) => {
@@ -338,6 +373,52 @@ const collectProductRecords = (record: Record<string, unknown>): Record<string, 
     if (custom && typeof custom === "object" && !Array.isArray(custom)) {
       queue.push(custom as Record<string, unknown>);
     }
+  }
+
+  return result;
+};
+
+const collectDealRecords = (record: Record<string, unknown>): Record<string, unknown>[] => {
+  const queue: Record<string, unknown>[] = [record];
+  const result: Record<string, unknown>[] = [];
+  const visited = new Set<unknown>();
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+
+    if (visited.has(current)) {
+      continue;
+    }
+
+    visited.add(current);
+    result.push(current);
+
+    const nestedKeys = [
+      "custom_fields",
+      "customFields",
+      "additional_data",
+      "additionalData",
+      "deal",
+      "data",
+      "values",
+      "value",
+      "fields",
+      "field",
+      "metadata",
+      "meta",
+      "details",
+      "info",
+      "related_objects",
+      "relatedObjects",
+      "related"
+    ];
+
+    nestedKeys.forEach((key) => {
+      const nested = (current as Record<string, unknown>)[key];
+      if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+        queue.push(nested as Record<string, unknown>);
+      }
+    });
   }
 
   return result;
@@ -682,8 +763,21 @@ const parseDealProducts = (
     { value: readValueByPath(deal, "productData"), defaultIsTraining: null },
     { value: readValueByPath(deal, "additional_data.products"), defaultIsTraining: null },
     { value: readValueByPath(deal, "additional_data.items"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "additional_data.deal.products"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "additional_data.deal.product_items"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "additional_data.deal.items"), defaultIsTraining: null },
     { value: readValueByPath(deal, "additionalData.products"), defaultIsTraining: null },
     { value: readValueByPath(deal, "additionalData.items"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "additionalData.deal.products"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "additionalData.deal.product_items"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "additionalData.deal.items"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "related_objects.products"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "related_objects.product_items"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "related_objects.deal_products"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "related_objects.dealProducts"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "relatedObjects.products"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "relatedObjects.product_items"), defaultIsTraining: null },
+    { value: readValueByPath(deal, "relatedObjects.deal_products"), defaultIsTraining: null },
     { value: deal["training_products"], defaultIsTraining: true },
     { value: deal["trainingProducts"], defaultIsTraining: true },
     { value: deal["extra_products"], defaultIsTraining: false },
@@ -1011,33 +1105,117 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     throw new Error("Pipedrive devolvió un deal sin identificador numérico");
   }
 
-  const org = normaliseRelatedEntity(deal["org_id"]);
-  const person = normaliseRelatedEntity(deal["person_id"]);
+  const dealRecords = collectDealRecords(deal);
+
+  const org = normaliseRelatedEntity(
+    findFirstValue(dealRecords, ["org_id", "organization", "org"]) ?? deal["org_id"]
+  );
+  const person = normaliseRelatedEntity(
+    findFirstValue(dealRecords, ["person_id", "person", "contact"]) ?? deal["person_id"]
+  );
+
+  const pipelineIdValue = findFirstValue(dealRecords, ["pipeline_id", "pipelineId", "pipeline.id"]);
+  const pipelineId = toOptionalNumber(pipelineIdValue) ?? toOptionalNumber(deal["pipeline_id"]);
 
   const pipelineName =
-    toOptionalString(deal["pipeline_name"]) ?? readNestedString(deal["pipeline"], "name");
+    toOptionalFieldText(findFirstValue(dealRecords, ["pipeline_name", "pipeline.name"])) ??
+    readNestedString(deal["pipeline"], "name");
 
-  const address =
-    toOptionalString(deal["org_address"]) ??
-    readNestedString(deal["org_id"], "address") ??
-    toOptionalString(deal["address"]);
+  const addressCandidate = findFirstValue(
+    dealRecords,
+    [
+      "org_address",
+      "organization.address",
+      "org.address",
+      "org_id.address",
+      "address"
+    ]
+  );
+  const address = toOptionalFieldText(addressCandidate) ?? org.address ?? person.address ?? null;
 
   const clientName =
-    toOptionalString(deal["org_name"]) ??
+    toOptionalFieldText(
+      findFirstValue(dealRecords, ["org_name", "organization.name", "org.name"])
+    ) ??
     org.name ??
-    toOptionalString(deal["person_name"]) ??
+    toOptionalFieldText(
+      findFirstValue(dealRecords, ["person_name", "person.name", "contact.name"])
+    ) ??
     person.name;
 
   const wonDate =
+    toOptionalString(
+      findFirstValue(dealRecords, ["won_time", "wonTime", "won_date", "wonDate"])
+    ) ??
     toOptionalString(deal["won_time"]) ??
     toOptionalString(deal["won_date"]) ??
     toOptionalString(deal["wonTime"]);
 
-  const sede = toOptionalString(deal["sede"]);
-  const caes = toOptionalString(deal["caes"]);
-  const fundae = toOptionalString(deal["fundae"]);
-  const hotelPernocta =
-    toOptionalString(deal["hotelPernocta"]) ?? toOptionalString(deal["hotel_pernocta"]);
+  const sede = toOptionalFieldText(
+    findFirstValue(dealRecords, [
+      "sede",
+      "sede.name",
+      "676d6bd51e52999c582c01f67c99a35ed30bf6ae",
+      "custom_fields.sede",
+      "custom_fields.676d6bd51e52999c582c01f67c99a35ed30bf6ae",
+      "customFields.sede",
+      "customFields.676d6bd51e52999c582c01f67c99a35ed30bf6ae",
+      "additional_data.custom_fields.676d6bd51e52999c582c01f67c99a35ed30bf6ae",
+      "additional_data.fields.676d6bd51e52999c582c01f67c99a35ed30bf6ae",
+      "additionalData.custom_fields.676d6bd51e52999c582c01f67c99a35ed30bf6ae",
+      "additionalData.fields.676d6bd51e52999c582c01f67c99a35ed30bf6ae"
+    ])
+  );
+
+  const caes = toOptionalFieldText(
+    findFirstValue(dealRecords, [
+      "caes",
+      "caes.name",
+      "e1971bf3a21d48737b682bf8d864ddc5eb15a351",
+      "custom_fields.caes",
+      "custom_fields.e1971bf3a21d48737b682bf8d864ddc5eb15a351",
+      "customFields.caes",
+      "customFields.e1971bf3a21d48737b682bf8d864ddc5eb15a351",
+      "additional_data.custom_fields.e1971bf3a21d48737b682bf8d864ddc5eb15a351",
+      "additional_data.fields.e1971bf3a21d48737b682bf8d864ddc5eb15a351",
+      "additionalData.custom_fields.e1971bf3a21d48737b682bf8d864ddc5eb15a351",
+      "additionalData.fields.e1971bf3a21d48737b682bf8d864ddc5eb15a351"
+    ])
+  );
+
+  const fundae = toOptionalFieldText(
+    findFirstValue(dealRecords, [
+      "fundae",
+      "fundae.name",
+      "245d60d4d18aec40ba888998ef92e5d00e494583",
+      "custom_fields.fundae",
+      "custom_fields.245d60d4d18aec40ba888998ef92e5d00e494583",
+      "customFields.fundae",
+      "customFields.245d60d4d18aec40ba888998ef92e5d00e494583",
+      "additional_data.custom_fields.245d60d4d18aec40ba888998ef92e5d00e494583",
+      "additional_data.fields.245d60d4d18aec40ba888998ef92e5d00e494583",
+      "additionalData.custom_fields.245d60d4d18aec40ba888998ef92e5d00e494583",
+      "additionalData.fields.245d60d4d18aec40ba888998ef92e5d00e494583"
+    ])
+  );
+
+  const hotelPernocta = toOptionalFieldText(
+    findFirstValue(dealRecords, [
+      "hotelPernocta",
+      "hotel_pernocta",
+      "c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
+      "custom_fields.hotelPernocta",
+      "custom_fields.hotel_pernocta",
+      "custom_fields.c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
+      "customFields.hotelPernocta",
+      "customFields.hotel_pernocta",
+      "customFields.c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
+      "additional_data.custom_fields.c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
+      "additional_data.fields.c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
+      "additionalData.custom_fields.c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
+      "additionalData.fields.c3a6daf8eb5b4e59c3c07cda8e01f43439101269"
+    ])
+  );
 
   const formations = parseDealFormations(deal);
   const notes: DealNote[] = [];
@@ -1050,7 +1228,14 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     deal["deal_notes"],
     deal["extra_notes"],
     readValueByPath(deal, "additional_data.notes"),
-    readValueByPath(deal, "notes.items")
+    readValueByPath(deal, "additional_data.deal.notes"),
+    readValueByPath(deal, "additionalData.notes"),
+    readValueByPath(deal, "additionalData.deal.notes"),
+    readValueByPath(deal, "notes.items"),
+    readValueByPath(deal, "related_objects.notes"),
+    readValueByPath(deal, "related_objects.note"),
+    readValueByPath(deal, "relatedObjects.notes"),
+    readValueByPath(deal, "relatedObjects.note")
   ];
 
   noteSources.forEach((value) => {
@@ -1070,7 +1255,16 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     deal["extra_files"],
     deal["documents"],
     readValueByPath(deal, "additional_data.files"),
-    readValueByPath(deal, "attachments.items")
+    readValueByPath(deal, "additional_data.deal.files"),
+    readValueByPath(deal, "additional_data.deal.attachments"),
+    readValueByPath(deal, "additionalData.files"),
+    readValueByPath(deal, "additionalData.deal.files"),
+    readValueByPath(deal, "additionalData.deal.attachments"),
+    readValueByPath(deal, "attachments.items"),
+    readValueByPath(deal, "related_objects.files"),
+    readValueByPath(deal, "related_objects.attachments"),
+    readValueByPath(deal, "relatedObjects.files"),
+    readValueByPath(deal, "relatedObjects.attachments")
   ];
 
   attachmentSources.forEach((value) => {
@@ -1096,7 +1290,7 @@ const mapPipedriveDealToRecord = (deal: Record<string, unknown>): DealRecord => 
     caes: caes ?? null,
     fundae: fundae ?? null,
     hotelPernocta: hotelPernocta ?? null,
-    pipelineId: toOptionalNumber(deal["pipeline_id"]),
+    pipelineId,
     pipelineName: pipelineName ?? null,
     wonDate,
     formations,

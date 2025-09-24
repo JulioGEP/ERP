@@ -11,6 +11,8 @@ export async function listDealsUpdatedDesc(limit = 100) {
 
 type DealResponse = {
   data?: unknown;
+  additional_data?: unknown;
+  related_objects?: unknown;
 };
 
 export async function getDealById(dealId: number) {
@@ -32,5 +34,20 @@ export async function getDealById(dealId: number) {
   }
 
   const json = (await res.json()) as DealResponse;
-  return json.data ?? null;
+
+  if (!json.data || typeof json.data !== "object") {
+    return json.data ?? null;
+  }
+
+  const result: Record<string, unknown> = { ...(json.data as Record<string, unknown>) };
+
+  if (json.additional_data !== undefined) {
+    result.additional_data = json.additional_data;
+  }
+
+  if (json.related_objects !== undefined) {
+    result.related_objects = json.related_objects;
+  }
+
+  return result;
 }
