@@ -1,3 +1,23 @@
+export type CalendarEventStatus = 'activo' | 'suspendido' | 'cancelado' | 'finalizado';
+
+export type ActiveEventPhase = 'pendiente' | 'borrador' | 'planificado' | 'confirmado';
+
+export type SessionVisualState =
+  | 'pending'
+  | 'draft'
+  | 'planned'
+  | 'confirmed'
+  | 'suspended'
+  | 'cancelled'
+  | 'finalized';
+
+export interface SessionStateDescriptor {
+  status: CalendarEventStatus;
+  phase: ActiveEventPhase | null;
+  visualState: SessionVisualState;
+  label: string;
+}
+
 export interface CalendarEvent {
   id: string;
   dealId: number;
@@ -19,6 +39,7 @@ export interface CalendarEvent {
   caes: string | null;
   hotelPernocta: string | null;
   logisticsInfo: string | null;
+  status: CalendarEventStatus;
 }
 
 const STORAGE_KEY = 'erp-calendar-events-v1';
@@ -35,6 +56,12 @@ const isStoredCalendarEvent = (event: unknown): event is StoredCalendarEvent => 
   const candidate = event as { id?: unknown; dealId?: unknown };
   return typeof candidate.id === 'string' && typeof candidate.dealId === 'number';
 };
+
+const isValidStatus = (value: unknown): value is CalendarEventStatus =>
+  value === 'activo' || value === 'suspendido' || value === 'cancelado' || value === 'finalizado';
+
+const parseStatus = (value: unknown): CalendarEventStatus =>
+  isValidStatus(value) ? value : 'activo';
 
 const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
   const parseString = (value: unknown, fallback = ''): string =>
@@ -103,9 +130,108 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     fundae: parseOptionalString((event as { fundae?: unknown }).fundae),
     caes: parseOptionalString((event as { caes?: unknown }).caes),
     hotelPernocta: parseOptionalString((event as { hotelPernocta?: unknown }).hotelPernocta),
-    logisticsInfo: parseOptionalString(event.logisticsInfo)
+    logisticsInfo: parseOptionalString(event.logisticsInfo),
+    status: parseStatus((event as { status?: unknown }).status)
   };
 };
+
+const hasValue = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+
+const hasAnyValue = (values: unknown): values is string[] =>
+  Array.isArray(values) && values.some((item) => hasValue(item));
+
+export const deriveActivePhase = (options: {
+  start?: string | null;
+  end?: string | null;
+  trainers?: string[];
+  mobileUnits?: string[];
+}): ActiveEventPhase => {
+  const hasStart = hasValue(options.start);
+  const hasEnd = hasValue(options.end);
+
+  if (!hasStart || !hasEnd) {
+    return 'pendiente';
+  }
+
+  const hasTrainer = hasAnyValue(options.trainers ?? []);
+  const hasMobileUnit = hasAnyValue(options.mobileUnits ?? []);
+
+  if (hasTrainer && hasMobileUnit) {
+    return 'planificado';
+  }
+
+  return 'borrador';
+};
+
+const visualStateFromPhase = (phase: ActiveEventPhase): SessionVisualState => {
+  switch (phase) {
+    case 'pendiente':
+      return 'pending';
+    case 'borrador':
+      return 'draft';
+    case 'planificado':
+      return 'planned';
+    case 'confirmado':
+      return 'confirmed';
+    default:
+      return 'draft';
+  }
+};
+
+const labelFromPhase = (phase: ActiveEventPhase): string => {
+  switch (phase) {
+    case 'pendiente':
+      return 'Pendiente';
+    case 'borrador':
+      return 'Borrador';
+    case 'planificado':
+      return 'Planificado';
+    case 'confirmado':
+      return 'Confirmado';
+    default:
+      return 'Pendiente';
+  }
+};
+
+export const describeSessionState = (
+  status: CalendarEventStatus,
+  details: { start?: string | null; end?: string | null; trainers?: string[]; mobileUnits?: string[] }
+): SessionStateDescriptor => {
+  if (status === 'activo') {
+    const phase = deriveActivePhase(details);
+    return {
+      status,
+      phase,
+      visualState: visualStateFromPhase(phase),
+      label: labelFromPhase(phase)
+    } satisfies SessionStateDescriptor;
+  }
+
+  const manualMap: Record<Exclude<CalendarEventStatus, 'activo'>, { label: string; visualState: SessionVisualState }> = {
+    suspendido: { label: 'Suspendido', visualState: 'suspended' },
+    cancelado: { label: 'Cancelado', visualState: 'cancelled' },
+    finalizado: { label: 'Finalizado', visualState: 'finalized' }
+  };
+
+  const fallback = manualMap[status];
+  return { status, phase: null, visualState: fallback.visualState, label: fallback.label } satisfies SessionStateDescriptor;
+};
+
+export const describeCalendarEventState = (event: CalendarEvent): SessionStateDescriptor =>
+  describeSessionState(event.status, {
+    start: event.start,
+    end: event.end,
+    trainers: event.trainers,
+    mobileUnits: event.mobileUnits
+  });
+
+export const isSessionActionRequired = (descriptor: SessionStateDescriptor): boolean =>
+  descriptor.visualState === 'pending' ||
+  descriptor.visualState === 'draft' ||
+  descriptor.visualState === 'suspended';
+
+export const isCalendarEventActionRequired = (event: CalendarEvent): boolean =>
+  isSessionActionRequired(describeCalendarEventState(event));
 
 export const loadCalendarEvents = (): CalendarEvent[] => {
   if (!isBrowser) {

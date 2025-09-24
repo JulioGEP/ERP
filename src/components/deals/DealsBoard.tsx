@@ -11,7 +11,7 @@ import Placeholder from 'react-bootstrap/Placeholder';
 import Row from 'react-bootstrap/Row';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
-import { CalendarEvent } from '../../services/calendar';
+import { CalendarEvent, isCalendarEventActionRequired } from '../../services/calendar';
 import {
   fetchDealById,
   fetchDeals,
@@ -155,10 +155,7 @@ const isEventComplete = (event: CalendarEvent | undefined): boolean => {
     return false;
   }
 
-  const start = typeof event.start === 'string' ? event.start.trim() : '';
-  const end = typeof event.end === 'string' ? event.end.trim() : '';
-
-  return start.length > 0 && end.length > 0;
+  return !isCalendarEventActionRequired(event);
 };
 
 interface DealsBoardProps {

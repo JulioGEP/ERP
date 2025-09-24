@@ -13,7 +13,11 @@ import Collapse from 'react-bootstrap/Collapse';
 import Col from 'react-bootstrap/Col';
 import Form from 'react-bootstrap/Form';
 import Row from 'react-bootstrap/Row';
-import { CalendarEvent } from '../../services/calendar';
+import {
+  CalendarEvent,
+  SessionVisualState,
+  describeCalendarEventState
+} from '../../services/calendar';
 
 interface CalendarViewProps {
   events: CalendarEvent[];
@@ -125,6 +129,16 @@ const buildUniqueList = (values: string[]): string[] => {
   });
 
   return Array.from(map.values());
+};
+
+const calendarEventColors: Record<SessionVisualState, { background: string; border: string; text: string }> = {
+  pending: { background: '#f8f9fa', border: '#dee2e6', text: '#1f2933' },
+  draft: { background: '#edf0f2', border: '#d3d9de', text: '#1f2933' },
+  planned: { background: '#e3f2e9', border: '#bedac5', text: '#1f2933' },
+  confirmed: { background: '#d5efd3', border: '#b1d8ae', text: '#1f2933' },
+  suspended: { background: '#fff4d6', border: '#f5dd9c', text: '#1f2933' },
+  cancelled: { background: '#f9d7da', border: '#f1afb5', text: '#1f2933' },
+  finalized: { background: '#d9e4ff', border: '#b4c7f6', text: '#1f2933' }
 };
 
 const buildEventTitle = (event: CalendarEvent) => {
@@ -449,11 +463,20 @@ const CalendarView = ({ events, onSelectEvent }: CalendarViewProps) => {
             scrollTime="06:00:00"
             height="parent"
             nowIndicator
-            events={filteredEvents.map((event) => ({
+            events={filteredEvents.map((event) => {
+            const state = describeCalendarEventState(event);
+            const palette = calendarEventColors[state.visualState] ?? calendarEventColors.pending;
+            const baseTitle = buildEventTitle(event);
+            const title = baseTitle.length > 0 ? `${state.label} · ${baseTitle}` : state.label;
+
+            return {
               id: event.id,
-              title: buildEventTitle(event),
+              title,
               start: event.start,
               end: event.end,
+              backgroundColor: palette.background,
+              borderColor: palette.border,
+              textColor: palette.text,
               extendedProps: {
                 dealId: event.dealId,
                 dealTitle: event.dealTitle,
@@ -468,9 +491,13 @@ const CalendarView = ({ events, onSelectEvent }: CalendarViewProps) => {
                 formations: event.formations,
                 fundae: event.fundae,
                 caes: event.caes,
-                hotelPernocta: event.hotelPernocta
+                hotelPernocta: event.hotelPernocta,
+                status: event.status,
+                statusLabel: state.label,
+                statusPhase: state.phase
               }
-            }))}
+            };
+          })}
             eventClick={(info: EventClickArg) => {
               if (!onSelectEvent) {
                 return;

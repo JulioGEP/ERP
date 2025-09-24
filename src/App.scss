@@ -118,6 +118,80 @@
   width: 100%;
 }
 
+.session-card {
+  background-color: #f8f9fa;
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+.session-card--pending {
+  background-color: #f8f9fa;
+}
+
+.session-card--draft {
+  background-color: #edf0f2;
+}
+
+.session-card--planned {
+  background-color: #e3f2e9;
+}
+
+.session-card--confirmed {
+  background-color: #d5efd3;
+}
+
+.session-card--suspended {
+  background-color: #fff4d6;
+}
+
+.session-card--cancelled {
+  background-color: #f9d7da;
+}
+
+.session-card--finalized {
+  background-color: #d9e4ff;
+}
+
+.session-status-badge {
+  font-weight: 600;
+  border: 1px solid transparent;
+  color: #1f2933 !important;
+}
+
+.session-status-badge--pending {
+  background-color: #eceff1 !important;
+  border-color: #dee2e6 !important;
+}
+
+.session-status-badge--draft {
+  background-color: #dfe3e6 !important;
+  border-color: #c7ccd1 !important;
+}
+
+.session-status-badge--planned {
+  background-color: #d6e9dd !important;
+  border-color: #b7d2bf !important;
+}
+
+.session-status-badge--confirmed {
+  background-color: #c9e6c7 !important;
+  border-color: #a9d2a7 !important;
+}
+
+.session-status-badge--suspended {
+  background-color: #ffe7ad !important;
+  border-color: #f5d98f !important;
+}
+
+.session-status-badge--cancelled {
+  background-color: #f4bfc4 !important;
+  border-color: #e79aa2 !important;
+}
+
+.session-status-badge--finalized {
+  background-color: #c0d2ff !important;
+  border-color: #9db7ff !important;
+}
+
 @media (max-width: 768px) {
   .calendar-card,
   .deals-card {

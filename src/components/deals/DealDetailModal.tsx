@@ -11,7 +11,12 @@ import Modal from 'react-bootstrap/Modal';
 import Row from 'react-bootstrap/Row';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
-import { CalendarEvent } from '../../services/calendar';
+import {
+  CalendarEvent,
+  CalendarEventStatus,
+  SessionVisualState,
+  describeSessionState
+} from '../../services/calendar';
 import {
   DealAttachment,
   DealNote,
@@ -53,7 +58,35 @@ interface SessionFormEntry {
   trainers: string[];
   mobileUnits: string[];
   logisticsInfo: string;
+  status: CalendarEventStatus;
 }
+
+const sessionStatusOptions: { value: CalendarEventStatus; label: string }[] = [
+  { value: 'activo', label: 'Activo' },
+  { value: 'suspendido', label: 'Suspendido' },
+  { value: 'cancelado', label: 'Cancelado' },
+  { value: 'finalizado', label: 'Finalizado' }
+];
+
+const sessionCardClassByVisualState: Record<SessionVisualState, string> = {
+  pending: 'session-card--pending',
+  draft: 'session-card--draft',
+  planned: 'session-card--planned',
+  confirmed: 'session-card--confirmed',
+  suspended: 'session-card--suspended',
+  cancelled: 'session-card--cancelled',
+  finalized: 'session-card--finalized'
+};
+
+const sessionBadgeClassByVisualState: Record<SessionVisualState, string> = {
+  pending: 'session-status-badge--pending',
+  draft: 'session-status-badge--draft',
+  planned: 'session-status-badge--planned',
+  confirmed: 'session-status-badge--confirmed',
+  suspended: 'session-status-badge--suspended',
+  cancelled: 'session-status-badge--cancelled',
+  finalized: 'session-status-badge--finalized'
+};
 
 type DisplayNote = DealNote & { shareWithTrainer?: boolean | null };
 type DisplayAttachment = DealAttachment;
@@ -270,6 +303,10 @@ const computeBlockedSelectionSetsForSession = (
   const sessionDateKeySet = new Set(sessionDateKeys);
 
   events.forEach((event) => {
+    if (event.status !== 'activo') {
+      return;
+    }
+
     const eventDateKeys = computeDateKeysInRange(event.start, event.end);
     if (eventDateKeys.length === 0) {
       return;
@@ -295,6 +332,10 @@ const computeBlockedSelectionSetsForSession = (
 
   allSessions.forEach((otherSession) => {
     if (otherSession.key === session.key) {
+      return;
+    }
+
+    if (otherSession.status !== 'activo') {
       return;
     }
 
@@ -579,7 +620,8 @@ const DealDetailModal = ({
           address: existingEvent?.address ?? deal.address ?? '',
           trainers: existingTrainers.length > 0 ? existingTrainers : [''],
           mobileUnits: normalizedMobileUnits.length > 0 ? normalizedMobileUnits : [''],
-          logisticsInfo: existingEvent?.logisticsInfo ?? ''
+          logisticsInfo: existingEvent?.logisticsInfo ?? '',
+          status: existingEvent?.status ?? 'activo'
         } satisfies SessionFormEntry;
       });
     });
@@ -795,6 +837,19 @@ const DealDetailModal = ({
     );
   };
 
+  const handleSessionStatusChange = (key: string, value: CalendarEventStatus) => {
+    setSessions((previous) =>
+      previous.map((session) =>
+        session.key === key
+          ? {
+              ...session,
+              status: value
+            }
+          : session
+      )
+    );
+  };
+
   const handleSessionFieldChange = (key: string, field: keyof SessionFormEntry, value: string) => {
     setSessions((previous) =>
       previous.map((session) =>
@@ -951,7 +1006,8 @@ const DealDetailModal = ({
         fundae: sanitizedFundae,
         caes: sanitizedCaes,
         hotelPernocta: sanitizedHotelPernocta,
-        logisticsInfo: logisticsInfo ? logisticsInfo : null
+        logisticsInfo: logisticsInfo ? logisticsInfo : null,
+        status: session.status
       });
     }
 
@@ -1684,13 +1740,52 @@ const DealDetailModal = ({
                               session.mobileUnits,
                               blockedSelections.mobileUnits
                             );
+                            const sessionState = describeSessionState(session.status, {
+                              start: session.start,
+                              end: session.end,
+                              trainers: session.trainers,
+                              mobileUnits: session.mobileUnits
+                            });
+                            const cardClassName = sessionCardClassByVisualState[sessionState.visualState] ?? '';
+                            const badgeClassName = sessionBadgeClassByVisualState[sessionState.visualState] ?? '';
 
                             return (
-                              <div key={session.key} className="border rounded p-3 bg-light">
-                                <div className="fw-semibold mb-3">Sesión {session.sessionIndex + 1}</div>
+                              <div
+                                key={session.key}
+                                className={`border rounded p-3 session-card ${cardClassName}`.trim()}
+                              >
+                                <div className="d-flex justify-content-between align-items-start mb-3">
+                                  <div className="fw-semibold">Sesión {session.sessionIndex + 1}</div>
+                                  <Badge bg="light" text="dark" className={`session-status-badge ${badgeClassName}`.trim()}>
+                                    {sessionState.label}
+                                  </Badge>
+                                </div>
                                 <Row className="g-4 align-items-start">
                                   <Col xl={6}>
                                     <Row className="g-3">
+                                      <Col xs={12}>
+                                        <Form.Group controlId={`status-${session.key}`}>
+                                          <Form.Label>Estado de la sesión</Form.Label>
+                                          <Form.Select
+                                            value={session.status}
+                                            onChange={(event) =>
+                                              handleSessionStatusChange(
+                                                session.key,
+                                                event.target.value as CalendarEventStatus
+                                              )
+                                            }
+                                          >
+                                            {sessionStatusOptions.map((option) => (
+                                              <option
+                                                key={`${session.key}-status-${option.value}`}
+                                                value={option.value}
+                                              >
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </Form.Select>
+                                        </Form.Group>
+                                      </Col>
                                       <Col md={6}>
                                         <Form.Group controlId={`start-${session.key}`}>
                                           <Form.Label>Hora y fecha inicio</Form.Label>
