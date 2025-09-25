@@ -19,7 +19,7 @@ const HeaderBar = ({ activeKey, onNavigate }: HeaderBarProps) => (
         <Navbar.Toggle aria-controls="app-header-navigation" />
         <Navbar.Collapse
           id="app-header-navigation"
-          className="justify-content-lg-end mt-3 mt-lg-0"
+          className="justify-content-lg-start mt-3 mt-lg-0"
         >
           <Nav
             activeKey={activeKey}
@@ -28,7 +28,7 @@ const HeaderBar = ({ activeKey, onNavigate }: HeaderBarProps) => (
                 onNavigate(eventKey);
               }
             }}
-            className="nav-tabs-clean flex-column flex-lg-row ms-lg-auto"
+            className="nav-tabs-clean flex-column flex-lg-row"
             role="tablist"
           >
             <Nav.Item>
