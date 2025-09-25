@@ -286,7 +286,7 @@ const ensurePipedriveIndexes = async (): Promise<void> => {
   }
 };
 
-iif (db) {
+if (db) {
   setupPipedriveIndexesIfEnabled(db).catch((e) =>
     console.error("No se pudieron preparar los índices de pipedrive_id", e)
   );
