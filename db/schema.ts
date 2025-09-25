@@ -11,7 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const deals = pgTable("deals", {
-  dealId: integer("deal_id").primaryKey(),
+  id: serial("id").primaryKey(),
   title: text("title").notNull(),
   clientId: integer("client_id"),
   clientName: text("client_name"),
@@ -29,7 +29,7 @@ export const deals = pgTable("deals", {
 
 export const dealFormations = pgTable("deal_formations", {
   id: serial("id").primaryKey(),
-  dealId: integer("deal_id").references(() => deals.dealId, { onDelete: "cascade" }),
+  dealId: integer("deal_id").references(() => deals.id, { onDelete: "cascade" }),
   value: text("value").notNull(),
   position: integer("position").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow()
@@ -37,7 +37,7 @@ export const dealFormations = pgTable("deal_formations", {
 
 export const dealProducts = pgTable("deal_products", {
   dealProductId: integer("deal_product_id").primaryKey(),
-  dealId: integer("deal_id").references(() => deals.dealId, { onDelete: "cascade" }),
+  dealId: integer("deal_id").references(() => deals.id, { onDelete: "cascade" }),
   productId: integer("product_id"),
   name: text("name").notNull(),
   code: text("code"),
@@ -53,7 +53,7 @@ export const dealProducts = pgTable("deal_products", {
 
 export const dealNotes = pgTable("deal_notes", {
   noteId: varchar("note_id", { length: 255 }).primaryKey(),
-  dealId: integer("deal_id").references(() => deals.dealId, { onDelete: "cascade" }),
+  dealId: integer("deal_id").references(() => deals.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
   createdAtText: text("created_at_text"),
   authorName: text("author_name"),
@@ -67,7 +67,7 @@ export const dealNotes = pgTable("deal_notes", {
 
 export const dealAttachments = pgTable("deal_attachments", {
   attachmentId: varchar("attachment_id", { length: 255 }).primaryKey(),
-  dealId: integer("deal_id").references(() => deals.dealId, { onDelete: "cascade" }),
+  dealId: integer("deal_id").references(() => deals.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   url: text("url").notNull(),
   downloadUrl: text("download_url"),
