@@ -3209,6 +3209,80 @@ app.put("/deal-extras", async (c) => {
 app.get("/health", (c) => c.json({ ok: true, at: new Date().toISOString() }));
 
 // Listado y detalle de deals (persistidos en BD)
+const fetchDealsDirectlyFromPipedrive = async (dealIds?: number[]): Promise<DealRecord[]> => {
+  const targetDealIds = Array.isArray(dealIds) && dealIds.length > 0 ? dealIds : null;
+
+  let identifiers: number[] = [];
+
+  if (targetDealIds) {
+    identifiers = targetDealIds.filter((value): value is number => Number.isFinite(value));
+  } else {
+    let remoteDeals: unknown[];
+
+    try {
+      remoteDeals = await listDealsUpdatedDesc(100);
+    } catch (error) {
+      console.error(
+        "No se pudo obtener la lista de deals desde Pipedrive para la respuesta directa",
+        error
+      );
+      return [];
+    }
+
+    const collected = new Set<number>();
+    remoteDeals.forEach((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+
+      const record = entry as Record<string, unknown>;
+      const identifier = parseDealIdentifier(record.id);
+
+      if (identifier !== null && !collected.has(identifier)) {
+        collected.add(identifier);
+      }
+    });
+
+    identifiers = Array.from(collected.values());
+  }
+
+  if (identifiers.length === 0) {
+    return [];
+  }
+
+  let fieldOptions: SingleOptionFieldOptions = {};
+
+  try {
+    fieldOptions = await loadDealFieldOptions();
+  } catch (error) {
+    console.error("No se pudieron cargar los metadatos de campos de Pipedrive", error);
+    fieldOptions = {};
+  }
+
+  const deals: DealRecord[] = [];
+
+  for (const dealId of identifiers) {
+    try {
+      const rawDeal = await getDealById(dealId);
+
+      if (!rawDeal) {
+        continue;
+      }
+
+      if (typeof rawDeal !== "object" || rawDeal === null) {
+        throw new Error("Respuesta inesperada al obtener un presupuesto desde Pipedrive");
+      }
+
+      const deal = mapPipedriveDealToRecord(rawDeal as Record<string, unknown>, fieldOptions);
+      deals.push(deal);
+    } catch (error) {
+      console.error(`No se pudo obtener el deal ${dealId} directamente desde Pipedrive`, error);
+    }
+  }
+
+  return deals;
+};
+
 app.get("/deals", async (c) => {
   const url = new URL(c.req.url);
   const dealIdParam = url.searchParams.get("dealId");
@@ -3224,18 +3298,21 @@ app.get("/deals", async (c) => {
 
     let storedDeal: DealRecord | null = null;
 
+    let storedDealError: DatabaseError | null = null;
+
     try {
       storedDeal = await readStoredDeal(dealId);
     } catch (error) {
       if (error instanceof DatabaseError) {
-        return c.json({ deal: null, message: error.message }, 503);
+        storedDealError = error;
+        console.error("No se pudo acceder al presupuesto almacenado en la base de datos", error);
+      } else {
+        console.error(`No se pudo leer el presupuesto ${dealId} almacenado`, error);
+        return c.json(
+          { deal: null, message: "No se pudo acceder a la información almacenada del presupuesto." },
+          500
+        );
       }
-
-      console.error(`No se pudo leer el presupuesto ${dealId} almacenado`, error);
-      return c.json(
-        { deal: null, message: "No se pudo acceder a la información almacenada del presupuesto." },
-        500
-      );
     }
 
     if (!forceRefresh && storedDeal) {
@@ -3297,15 +3374,39 @@ app.get("/deals", async (c) => {
         rawDeal as Record<string, unknown>,
         fieldOptions
       );
-      await saveDealRecord(deal);
+      try {
+        await saveDealRecord(deal);
+      } catch (error) {
+        if (error instanceof DatabaseError) {
+          console.error(
+            "No se pudo guardar el presupuesto actualizado en la base de datos; se responderá igualmente",
+            error
+          );
+        } else {
+          throw error;
+        }
+      }
       return c.json({ deal, refreshed: true });
     } catch (error) {
       if (error instanceof DatabaseError) {
-        return c.json(
-          {
+        if (storedDeal) {
+          return c.json({
             deal: storedDeal,
             refreshed: false,
-            message: error.message
+            message: storedDealError?.message ?? error.message
+          });
+        }
+
+        const fallbackDeal = await fetchDealsDirectlyFromPipedrive([dealId]);
+
+        if (fallbackDeal.length > 0) {
+          return c.json({ deal: fallbackDeal[0], refreshed: true });
+        }
+
+        return c.json(
+          {
+            deal: null,
+            message: storedDealError?.message ?? error.message
           },
           503
         );
@@ -3329,19 +3430,31 @@ app.get("/deals", async (c) => {
     }
   }
 
-  let deals: DealRecord[];
+  let deals: DealRecord[] = [];
+  let storageError: DatabaseError | null = null;
   try {
     deals = await listStoredDeals();
   } catch (error) {
     if (error instanceof DatabaseError) {
-      return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 503);
+      storageError = error;
+      console.error("No se pudo acceder a los presupuestos almacenados en la base de datos", error);
+    } else {
+      console.error("No se pudo obtener el listado de presupuestos almacenados", error);
+      return c.json(
+        { deals: [], page: 1, limit: 0, message: "No se pudo obtener el listado de presupuestos." },
+        500
+      );
+    }
+  }
+
+  if (storageError) {
+    const fallbackDeals = await fetchDealsDirectlyFromPipedrive();
+
+    if (fallbackDeals.length === 0) {
+      return c.json({ deals: [], page: 1, limit: 0, message: storageError.message }, 503);
     }
 
-    console.error("No se pudo obtener el listado de presupuestos almacenados", error);
-    return c.json(
-      { deals: [], page: 1, limit: 0, message: "No se pudo obtener el listado de presupuestos." },
-      500
-    );
+    return c.json({ deals: fallbackDeals, page: 1, limit: fallbackDeals.length });
   }
 
   if (forceRefresh) {
@@ -3351,7 +3464,13 @@ app.get("/deals", async (c) => {
       deals = await listStoredDeals();
     } catch (error) {
       if (error instanceof DatabaseError) {
-        return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 503);
+        const fallbackDeals = await fetchDealsDirectlyFromPipedrive();
+
+        if (fallbackDeals.length === 0) {
+          return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 503);
+        }
+
+        return c.json({ deals: fallbackDeals, page: 1, limit: fallbackDeals.length });
       }
 
       console.error(
