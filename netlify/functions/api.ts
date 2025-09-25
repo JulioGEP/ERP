@@ -1574,14 +1574,57 @@ const parsePipedriveNotes = (
   return result;
 };
 
+const resolveDealIdFromRecord = (record: Record<string, unknown>): number | null => {
+  const dealIdPaths = [
+    "deal_id",
+    "dealId",
+    "deal.id",
+    "dealId.value",
+    "deal_id.value",
+    "item.deal_id",
+    "item.dealId",
+    "data.deal_id",
+    "data.dealId",
+    "related_object.deal_id",
+    "related_object.dealId",
+    "relatedObjects.deal_id",
+    "relatedObjects.dealId"
+  ];
+
+  for (const path of dealIdPaths) {
+    const candidate = readValueByPath(record, path);
+    const parsed = toOptionalNumber(candidate);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
 const parsePipedriveAttachments = (
   value: unknown,
   source: "deal" | "product",
   overrides: { productId: number | null; dealProductId: number | null },
-  idPrefix: string
+  idPrefix: string,
+  options: { expectedDealId?: number | null } = {}
 ): DealAttachment[] => {
   const result: DealAttachment[] = [];
   const entries = normaliseArray(value);
+  const expectedDealId = options.expectedDealId ?? null;
+
+  const shouldIncludeAttachment = (record: Record<string, unknown>): boolean => {
+    if (expectedDealId === null) {
+      return true;
+    }
+
+    const resolvedDealId = resolveDealIdFromRecord(record);
+    if (resolvedDealId === null) {
+      return true;
+    }
+
+    return resolvedDealId === expectedDealId;
+  };
 
   if (entries.length > 0) {
     entries.forEach((entry, index) => {
@@ -1607,6 +1650,10 @@ const parsePipedriveAttachments = (
       }
 
       const record = entry as Record<string, unknown>;
+      if (!shouldIncludeAttachment(record)) {
+        return;
+      }
+
       const id = ensureId(
         record.id ?? record.file_id ?? record.uuid ?? record.key,
         `${idPrefix}-${source}-attachment`,
@@ -1900,7 +1947,8 @@ const parseDealProducts = (
         attachmentsRaw,
         "product",
         { productId: productId ?? null, dealProductId },
-        `${dealId}-${dealProductId}-prod`
+        `${dealId}-${dealProductId}-prod`,
+        { expectedDealId: dealId }
       );
       productAttachments.forEach((attachment) =>
         pushUniqueAttachment(attachmentAccumulator, attachment)
@@ -2194,7 +2242,8 @@ const mapPipedriveDealToRecord = (
       value,
       "deal",
       { productId: null, dealProductId: null },
-      `${dealId}`
+      `${dealId}`,
+      { expectedDealId: dealId }
     );
     parsed.forEach((attachment) => pushUniqueAttachment(attachments, attachment));
   });
