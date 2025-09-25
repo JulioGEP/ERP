@@ -1450,7 +1450,9 @@ const findFirstValue = (records: Record<string, unknown>[], keys: string[]): unk
   return undefined;
 };
 
-const parseRecommendedHoursValue = (
+const PIPEDRIVE_RECOMMENDED_HOURS_FIELD = "38f11c8876ecde803a027fbf3c9041fda2ae7eb7";
+
+const parseProductRecommendedHours = (
   value: unknown
 ): { numeric: number | null; raw: string | null } => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -1464,64 +1466,21 @@ const parseRecommendedHoursValue = (
       return { numeric: null, raw: null };
     }
 
-    const normalized = trimmed.replace(/,/g, ".");
-    const match = normalized.match(/-?\d+(?:\.\d+)?/);
-    const numeric = match ? Number.parseFloat(match[0]) : Number.NaN;
+    const match = trimmed.replace(/,/g, ".").match(/\d+(?:\.\d+)?/);
+    if (!match) {
+      return { numeric: null, raw: null };
+    }
+
+    const sanitized = match[0];
+    const parsed = Number.parseFloat(sanitized);
 
     return {
-      numeric: Number.isFinite(numeric) ? numeric : null,
-      raw: trimmed
+      numeric: Number.isFinite(parsed) ? parsed : null,
+      raw: sanitized
     };
   }
 
   return { numeric: null, raw: null };
-};
-
-const parseRecommendedHours = (records: Record<string, unknown>[]) => {
-  const valueCandidate = findFirstValue(records, [
-    "recommended_hours",
-    "recommendedHours",
-    "recommended_hours_value",
-    "horas_recomendadas",
-    "horasRecomendadas",
-    "hours",
-    "duration_hours",
-    "durationHours",
-    "duration"
-  ]);
-
-  const textCandidate = findFirstValue(records, [
-    "recommended_hours_text",
-    "recommendedHoursText",
-    "recommended_hours_raw",
-    "recommendedHoursRaw",
-    "horas_recomendadas_texto",
-    "horasRecomendadasTexto",
-    "recommended_hours_label",
-    "recommendedHoursLabel"
-  ]);
-
-  let result = parseRecommendedHoursValue(valueCandidate);
-
-  if (!result.raw && textCandidate !== undefined) {
-    const textResult = parseRecommendedHoursValue(textCandidate);
-
-    if (textResult.raw) {
-      result = {
-        numeric: result.numeric ?? textResult.numeric,
-        raw: textResult.raw
-      };
-    }
-  }
-
-  if (!result.raw && valueCandidate !== undefined && typeof valueCandidate === "number") {
-    result = {
-      numeric: result.numeric ?? (Number.isFinite(valueCandidate) ? valueCandidate : null),
-      raw: String(valueCandidate)
-    };
-  }
-
-  return result;
 };
 
 const parsePipedriveNotes = (
@@ -1964,7 +1923,19 @@ const parseDealProducts = (
         itemPrice = Number.isFinite(parsed) ? parsed : null;
       }
 
-      const recommended = parseRecommendedHours(candidateRecords);
+      const recommendedValue = findFirstValue(candidateRecords, [
+        PIPEDRIVE_RECOMMENDED_HOURS_FIELD,
+        `product.${PIPEDRIVE_RECOMMENDED_HOURS_FIELD}`,
+        `item.${PIPEDRIVE_RECOMMENDED_HOURS_FIELD}`,
+        `custom_fields.${PIPEDRIVE_RECOMMENDED_HOURS_FIELD}`,
+        `customFields.${PIPEDRIVE_RECOMMENDED_HOURS_FIELD}`,
+        `product.custom_fields.${PIPEDRIVE_RECOMMENDED_HOURS_FIELD}`,
+        `product.customFields.${PIPEDRIVE_RECOMMENDED_HOURS_FIELD}`,
+        `item.custom_fields.${PIPEDRIVE_RECOMMENDED_HOURS_FIELD}`,
+        `item.customFields.${PIPEDRIVE_RECOMMENDED_HOURS_FIELD}`
+      ]);
+
+      const recommended = parseProductRecommendedHours(recommendedValue);
 
       const productNotesRaw = findFirstValue(candidateRecords, [
         "notes",

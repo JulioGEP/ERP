@@ -35,8 +35,6 @@ import {
   StoredDealDocument,
   StoredDealNote
 } from '../../services/dealExtras';
-import { resolveFormationRecommendedHoursFromList } from '../../data/formationRecommendedHours';
-
 interface DealDetailModalProps {
   show: boolean;
   deal: DealRecord;
@@ -705,34 +703,16 @@ const DealDetailModal = ({
 
   const recommendedHoursMetadata = useMemo(() => {
     const map = new Map<number, { numeric: number | null; raw: string | null }>();
-    const formationCandidates = formationLabels;
 
     trainingProducts.forEach((product) => {
-      let numeric = product.recommendedHours ?? null;
-      let raw =
-        product.recommendedHoursRaw ?? (numeric != null ? String(numeric) : null);
-
-      if (numeric == null) {
-        const resolved = resolveFormationRecommendedHoursFromList([
-          product.recommendedHoursRaw,
-          product.name,
-          product.code,
-          ...formationCandidates
-        ]);
-
-        if (resolved != null) {
-          numeric = resolved;
-          if (!raw) {
-            raw = `${resolved} horas`;
-          }
-        }
-      }
+      const numeric = product.recommendedHours ?? null;
+      const raw = product.recommendedHoursRaw ?? (numeric != null ? String(numeric) : null);
 
       map.set(product.dealProductId, { numeric, raw });
     });
 
     return map;
-  }, [formationLabels, trainingProducts]);
+  }, [trainingProducts]);
 
   const productMap = useMemo(() => {
     const byDealProductId = new Map<number, string>();
