@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Button from 'react-bootstrap/Button';
 import Container from 'react-bootstrap/Container';
 import Modal from 'react-bootstrap/Modal';
@@ -29,6 +29,11 @@ const App = () => {
   const [calendarModalError, setCalendarModalError] = useState<string | null>(null);
   const dealCacheRef = useRef<Record<number, DealRecord>>({});
   const activeDealRequestRef = useRef<number | null>(null);
+  const [calendarDealIdFilter, setCalendarDealIdFilter] = useState('');
+  const [backlogDealIdFilter, setBacklogDealIdFilter] = useState('');
+  const [knownBacklogDealIds, setKnownBacklogDealIds] = useState<number[]>([]);
+
+  const calendarDealIds = useMemo(() => new Set(calendarEvents.map((event) => event.dealId)), [calendarEvents]);
 
   useEffect(() => {
     calendarEventsRef.current = calendarEvents;
@@ -163,6 +168,55 @@ const App = () => {
     setSelectedCalendarDeal(refreshed);
   }, [selectedCalendarDealId]);
 
+  const handleBacklogDealIdFilterChange = useCallback((value: string) => {
+    setBacklogDealIdFilter(value);
+  }, []);
+
+  const handleCalendarDealIdFilterChange = useCallback((value: string) => {
+    setCalendarDealIdFilter(value);
+  }, []);
+
+  const handleKnownDealIdsChange = useCallback((dealIds: number[]) => {
+    setKnownBacklogDealIds(dealIds);
+  }, []);
+
+  const handleBacklogDealNotFound = useCallback(
+    (dealId: number) => {
+      if (!calendarDealIds.has(dealId)) {
+        return;
+      }
+
+      const shouldNavigate = window.confirm('Este presupuesto está en el calendario. ¿Lo quieres ver?');
+
+      if (!shouldNavigate) {
+        return;
+      }
+
+      setActiveTab('calendar');
+      setCalendarDealIdFilter(String(dealId));
+      setBacklogDealIdFilter('');
+    },
+    [calendarDealIds]
+  );
+
+  const handleCalendarDealNotFound = useCallback((dealId: number) => {
+    if (!knownBacklogDealIds.includes(dealId)) {
+      return;
+    }
+
+    const shouldNavigate = window.confirm(
+      'Este presupuesto está en presupuesto sin planificar. ¿Lo quieres ver?'
+    );
+
+    if (!shouldNavigate) {
+      return;
+    }
+
+    setActiveTab('backlog');
+    setBacklogDealIdFilter(String(dealId));
+    setCalendarDealIdFilter('');
+  }, [knownBacklogDealIds]);
+
   return (
     <div className="app-shell">
       <HeaderBar onNavigate={setActiveTab} activeKey={activeTab} />
@@ -177,9 +231,23 @@ const App = () => {
               }
             >
               {activeTab === 'calendar' ? (
-                <CalendarView events={calendarEvents} onSelectEvent={handleCalendarEventSelect} />
+                <CalendarView
+                  events={calendarEvents}
+                  onSelectEvent={handleCalendarEventSelect}
+                  dealIdFilter={calendarDealIdFilter}
+                  onDealIdFilterChange={handleCalendarDealIdFilterChange}
+                  knownDealIds={knownBacklogDealIds}
+                  onDealNotFound={handleCalendarDealNotFound}
+                />
               ) : (
-                <DealsBoard events={calendarEvents} onUpdateSchedule={handleUpdateSchedule} />
+                <DealsBoard
+                  events={calendarEvents}
+                  onUpdateSchedule={handleUpdateSchedule}
+                  dealIdFilter={backlogDealIdFilter}
+                  onDealIdFilterChange={handleBacklogDealIdFilterChange}
+                  onDealNotFound={handleBacklogDealNotFound}
+                  onKnownDealIdsChange={handleKnownDealIdsChange}
+                />
               )}
             </Suspense>
           </Stack>

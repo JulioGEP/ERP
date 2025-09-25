@@ -169,9 +169,20 @@ const isEventComplete = (event: CalendarEvent | undefined): boolean => {
 interface DealsBoardProps {
   events: CalendarEvent[];
   onUpdateSchedule: (dealId: number, events: CalendarEvent[]) => void;
+  dealIdFilter?: string;
+  onDealIdFilterChange?: (value: string) => void;
+  onDealNotFound?: (dealId: number) => void;
+  onKnownDealIdsChange?: (dealIds: number[]) => void;
 }
 
-const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
+const DealsBoard = ({
+  events,
+  onUpdateSchedule,
+  dealIdFilter,
+  onDealIdFilterChange,
+  onDealNotFound,
+  onKnownDealIdsChange
+}: DealsBoardProps) => {
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
@@ -181,6 +192,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
   const hasSynchronizedSharedDataRef = useRef(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [filters, setFilters] = useState<DealsFilters>(() => createEmptyFilters());
+  const lastPromptedDealIdRef = useRef<string | null>(null);
   const filterPanelId = 'deals-filters-panel';
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['deals', 'stage-3'],
@@ -591,7 +603,7 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
 
   const normalizedFilters = useMemo(
     () =>
-      (Object.entries(filters) as [FilterKey, string][]) 
+      (Object.entries(filters) as [FilterKey, string][])
         .map(([key, value]) => [key, value.trim()] as [FilterKey, string])
         .filter(([, value]) => value.length > 0)
         .map(([key, value]) => [key, normaliseText(value)] as [FilterKey, string]),
@@ -600,6 +612,23 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
 
   const activeFilterCount = normalizedFilters.length;
   const isFiltering = activeFilterCount > 0;
+
+  useEffect(() => {
+    if (dealIdFilter == null) {
+      return;
+    }
+
+    setFilters((current) => {
+      if (current.id === dealIdFilter) {
+        return current;
+      }
+
+      return {
+        ...current,
+        id: dealIdFilter
+      };
+    });
+  }, [dealIdFilter]);
 
   const filteredDeals = useMemo<DealRecord[]>(() => {
     if (dealsWithManual.length === 0) {
@@ -717,10 +746,15 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
       ...current,
       [key]: value
     }));
+
+    if (key === 'id') {
+      onDealIdFilterChange?.(value);
+    }
   };
 
   const handleResetFilters = () => {
     setFilters(createEmptyFilters());
+    onDealIdFilterChange?.('');
   };
 
   const renderSortButton = (label: string, field: SortField) => {
@@ -798,6 +832,47 @@ const DealsBoard = ({ events, onUpdateSchedule }: DealsBoardProps) => {
         : `Presupuesto #${dealId} eliminado de la lista.`
     });
   };
+
+  const knownDealIds = useMemo(() => dealsWithManual.map((deal) => deal.id), [dealsWithManual]);
+
+  useEffect(() => {
+    onKnownDealIdsChange?.(knownDealIds);
+  }, [knownDealIds, onKnownDealIdsChange]);
+
+  useEffect(() => {
+    const trimmed = filters.id.trim();
+
+    if (trimmed.length === 0) {
+      lastPromptedDealIdRef.current = null;
+      return;
+    }
+
+    if (filteredDeals.length > 0) {
+      lastPromptedDealIdRef.current = null;
+      return;
+    }
+
+    if (lastPromptedDealIdRef.current === trimmed) {
+      return;
+    }
+
+    const parsedDealId = Number(trimmed);
+
+    if (!Number.isFinite(parsedDealId)) {
+      lastPromptedDealIdRef.current = trimmed;
+      return;
+    }
+
+    const existsInCalendar = events.some((event) => event.dealId === parsedDealId);
+
+    if (!existsInCalendar) {
+      lastPromptedDealIdRef.current = trimmed;
+      return;
+    }
+
+    lastPromptedDealIdRef.current = trimmed;
+    onDealNotFound?.(parsedDealId);
+  }, [events, filteredDeals, filters.id, onDealNotFound]);
 
   const uploadDeal = useMutation({
     mutationFn: (dealId: number) => fetchDealById(dealId, { refresh: true }),
