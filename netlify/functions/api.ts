@@ -3254,6 +3254,24 @@ const synchronizeDealsFromPipedrive = async (
 const app = new Hono().basePath("/.netlify/functions/api");
 app.use("*", cors());
 
+app.post("/db-smoke", async (c) => {
+  try {
+    if (!db) throw new Error("DATABASE_URL missing");
+    const rs = await db.execute(sql`
+      INSERT INTO organizations (pipedrive_id, name, cif, phone, address, created_at, updated_at)
+      VALUES (999999999, 'SMOKE ORG', 'B00000000', '+34 600 000 000', 'C/ Prueba 123', now(), now())
+      ON CONFLICT (pipedrive_id) DO UPDATE
+      SET name=EXCLUDED.name, updated_at=now()
+      RETURNING id
+    `);
+    const id = (rs.rows as any[])[0]?.id ?? null;
+    return c.json({ ok: true, id });
+  } catch (e: any) {
+    console.error("DB-SMOKE FAIL", e);
+    return c.json({ ok: false, error: String(e?.message ?? e) }, 500);
+  }
+});
+
 app.get("/calendar-events", async (c) => {
   const events = await readSharedState<unknown[]>(SHARED_STATE_KEYS.calendarEvents, []);
   return c.json({ events });
