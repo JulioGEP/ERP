@@ -828,191 +828,193 @@ const loadDealsFromDatabase = async (
       });
     });
 
-    const formationRows = await db
-      .select({
-        dealId: dealFormations.dealId,
-        value: dealFormations.value,
-        position: dealFormations.position
-      })
-      .from(dealFormations)
-      .where(inArray(dealFormations.dealId, identifiers))
-      .orderBy(dealFormations.dealId, dealFormations.position, dealFormations.id);
+    if (FEATURE_CREATE_DEAL_TABLES) {
+      const formationRows = await db
+        .select({
+          dealId: dealFormations.dealId,
+          value: dealFormations.value,
+          position: dealFormations.position
+        })
+        .from(dealFormations)
+        .where(inArray(dealFormations.dealId, identifiers))
+        .orderBy(dealFormations.dealId, dealFormations.position, dealFormations.id);
 
-    formationRows.forEach((row: StoredFormationRow) => {
-      if (typeof row.dealId !== "number" || typeof row.value !== "string") {
-        return;
-      }
-
-      const builder = builders.get(row.dealId);
-      if (!builder) {
-        return;
-      }
-
-      builder.formations.push({ value: row.value, position: row.position ?? 0 });
-    });
-
-    const productRows = await db
-      .select({
-        dealId: dealProducts.dealId,
-        dealProductId: dealProducts.dealProductId,
-        productId: dealProducts.productId,
-        name: dealProducts.name,
-        code: dealProducts.code,
-        quantity: dealProducts.quantity,
-        itemPrice: dealProducts.itemPrice,
-        recommendedHours: dealProducts.recommendedHours,
-        recommendedHoursRaw: dealProducts.recommendedHoursRaw,
-        isTraining: dealProducts.isTraining,
-        position: dealProducts.position
-      })
-      .from(dealProducts)
-      .where(inArray(dealProducts.dealId, identifiers))
-      .orderBy(dealProducts.dealId, dealProducts.position, dealProducts.dealProductId);
-
-    productRows.forEach((row: StoredProductRow) => {
-      if (typeof row.dealId !== "number" || typeof row.dealProductId !== "number") {
-        return;
-      }
-
-      const builder = builders.get(row.dealId);
-      if (!builder) {
-        return;
-      }
-
-      const product: DealProduct = {
-        dealProductId: row.dealProductId,
-        productId: row.productId ?? null,
-        name: row.name ?? `Producto ${row.dealProductId}`,
-        code: row.code ?? null,
-        quantity: typeof row.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0,
-        itemPrice: row.itemPrice ?? null,
-        recommendedHours: row.recommendedHours ?? null,
-        recommendedHoursRaw: row.recommendedHoursRaw ?? null,
-        notes: [],
-        attachments: [],
-        isTraining: Boolean(row.isTraining)
-      };
-
-      const container = {
-        product,
-        position: row.position ?? 0,
-        noteEntries: [] as { note: DealNote; position: number }[],
-        attachmentEntries: [] as { attachment: DealAttachment; position: number }[]
-      };
-
-      builder.productContainers.set(row.dealProductId, container);
-
-      if (product.isTraining) {
-        builder.trainingProducts.push({ product, position: container.position });
-      } else {
-        builder.extraProducts.push({ product, position: container.position });
-      }
-    });
-
-    const noteRows = await db
-      .select({
-        noteId: dealNotes.noteId,
-        dealId: dealNotes.dealId,
-        content: dealNotes.content,
-        createdAtText: dealNotes.createdAtText,
-        authorName: dealNotes.authorName,
-        source: dealNotes.source,
-        productId: dealNotes.productId,
-        dealProductId: dealNotes.dealProductId,
-        position: dealNotes.position,
-        productPosition: dealNotes.productPosition
-      })
-      .from(dealNotes)
-      .where(inArray(dealNotes.dealId, identifiers))
-      .orderBy(dealNotes.dealId, dealNotes.position, dealNotes.noteId);
-
-    noteRows.forEach((row: StoredNoteRow) => {
-      if (typeof row.dealId !== "number" || typeof row.noteId !== "string" || typeof row.content !== "string") {
-        return;
-      }
-
-      const builder = builders.get(row.dealId);
-      if (!builder) {
-        return;
-      }
-
-      const note: DealNote = {
-        id: row.noteId,
-        content: row.content,
-        createdAt: row.createdAtText ?? null,
-        authorName: row.authorName ?? null,
-        source: row.source === "product" || row.source === "local" ? row.source : "deal",
-        productId: row.productId ?? null,
-        dealProductId: row.dealProductId ?? null
-      };
-
-      builder.notes.push({ note, position: row.position ?? 0 });
-
-      if (typeof row.dealProductId === "number") {
-        const container = builder.productContainers.get(row.dealProductId);
-        if (container) {
-          container.noteEntries.push({ note, position: row.productPosition ?? row.position ?? 0 });
+      formationRows.forEach((row: StoredFormationRow) => {
+        if (typeof row.dealId !== "number" || typeof row.value !== "string") {
+          return;
         }
-      }
-    });
 
-    const attachmentRows = await db
-      .select({
-        attachmentId: dealAttachments.attachmentId,
-        dealId: dealAttachments.dealId,
-        name: dealAttachments.name,
-        url: dealAttachments.url,
-        downloadUrl: dealAttachments.downloadUrl,
-        fileType: dealAttachments.fileType,
-        addedAtText: dealAttachments.addedAtText,
-        addedBy: dealAttachments.addedBy,
-        source: dealAttachments.source,
-        productId: dealAttachments.productId,
-        dealProductId: dealAttachments.dealProductId,
-        position: dealAttachments.position,
-        productPosition: dealAttachments.productPosition
-      })
-      .from(dealAttachments)
-      .where(inArray(dealAttachments.dealId, identifiers))
-      .orderBy(dealAttachments.dealId, dealAttachments.position, dealAttachments.attachmentId);
-
-    attachmentRows.forEach((row: StoredAttachmentRow) => {
-      if (
-        typeof row.dealId !== "number" ||
-        typeof row.attachmentId !== "string" ||
-        typeof row.name !== "string" ||
-        typeof row.url !== "string"
-      ) {
-        return;
-      }
-
-      const builder = builders.get(row.dealId);
-      if (!builder) {
-        return;
-      }
-
-      const attachment: DealAttachment = {
-        id: row.attachmentId,
-        name: row.name,
-        url: row.url,
-        downloadUrl: row.downloadUrl ?? null,
-        fileType: row.fileType ?? null,
-        addedAt: row.addedAtText ?? null,
-        addedBy: row.addedBy ?? null,
-        source: row.source === "product" || row.source === "local" ? row.source : "deal",
-        productId: row.productId ?? null,
-        dealProductId: row.dealProductId ?? null
-      };
-
-      builder.attachments.push({ attachment, position: row.position ?? 0 });
-
-      if (typeof row.dealProductId === "number") {
-        const container = builder.productContainers.get(row.dealProductId);
-        if (container) {
-          container.attachmentEntries.push({ attachment, position: row.productPosition ?? row.position ?? 0 });
+        const builder = builders.get(row.dealId);
+        if (!builder) {
+          return;
         }
-      }
-    });
+
+        builder.formations.push({ value: row.value, position: row.position ?? 0 });
+      });
+
+      const productRows = await db
+        .select({
+          dealId: dealProducts.dealId,
+          dealProductId: dealProducts.dealProductId,
+          productId: dealProducts.productId,
+          name: dealProducts.name,
+          code: dealProducts.code,
+          quantity: dealProducts.quantity,
+          itemPrice: dealProducts.itemPrice,
+          recommendedHours: dealProducts.recommendedHours,
+          recommendedHoursRaw: dealProducts.recommendedHoursRaw,
+          isTraining: dealProducts.isTraining,
+          position: dealProducts.position
+        })
+        .from(dealProducts)
+        .where(inArray(dealProducts.dealId, identifiers))
+        .orderBy(dealProducts.dealId, dealProducts.position, dealProducts.dealProductId);
+
+      productRows.forEach((row: StoredProductRow) => {
+        if (typeof row.dealId !== "number" || typeof row.dealProductId !== "number") {
+          return;
+        }
+
+        const builder = builders.get(row.dealId);
+        if (!builder) {
+          return;
+        }
+
+        const product: DealProduct = {
+          dealProductId: row.dealProductId,
+          productId: row.productId ?? null,
+          name: row.name ?? `Producto ${row.dealProductId}`,
+          code: row.code ?? null,
+          quantity: typeof row.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0,
+          itemPrice: row.itemPrice ?? null,
+          recommendedHours: row.recommendedHours ?? null,
+          recommendedHoursRaw: row.recommendedHoursRaw ?? null,
+          notes: [],
+          attachments: [],
+          isTraining: Boolean(row.isTraining)
+        };
+
+        const container = {
+          product,
+          position: row.position ?? 0,
+          noteEntries: [] as { note: DealNote; position: number }[],
+          attachmentEntries: [] as { attachment: DealAttachment; position: number }[]
+        };
+
+        builder.productContainers.set(row.dealProductId, container);
+
+        if (product.isTraining) {
+          builder.trainingProducts.push({ product, position: container.position });
+        } else {
+          builder.extraProducts.push({ product, position: container.position });
+        }
+      });
+
+      const noteRows = await db
+        .select({
+          noteId: dealNotes.noteId,
+          dealId: dealNotes.dealId,
+          content: dealNotes.content,
+          createdAtText: dealNotes.createdAtText,
+          authorName: dealNotes.authorName,
+          source: dealNotes.source,
+          productId: dealNotes.productId,
+          dealProductId: dealNotes.dealProductId,
+          position: dealNotes.position,
+          productPosition: dealNotes.productPosition
+        })
+        .from(dealNotes)
+        .where(inArray(dealNotes.dealId, identifiers))
+        .orderBy(dealNotes.dealId, dealNotes.position, dealNotes.noteId);
+
+      noteRows.forEach((row: StoredNoteRow) => {
+        if (typeof row.dealId !== "number" || typeof row.noteId !== "string" || typeof row.content !== "string") {
+          return;
+        }
+
+        const builder = builders.get(row.dealId);
+        if (!builder) {
+          return;
+        }
+
+        const note: DealNote = {
+          id: row.noteId,
+          content: row.content,
+          createdAt: row.createdAtText ?? null,
+          authorName: row.authorName ?? null,
+          source: row.source === "product" || row.source === "local" ? row.source : "deal",
+          productId: row.productId ?? null,
+          dealProductId: row.dealProductId ?? null
+        };
+
+        builder.notes.push({ note, position: row.position ?? 0 });
+
+        if (typeof row.dealProductId === "number") {
+          const container = builder.productContainers.get(row.dealProductId);
+          if (container) {
+            container.noteEntries.push({ note, position: row.productPosition ?? row.position ?? 0 });
+          }
+        }
+      });
+
+      const attachmentRows = await db
+        .select({
+          attachmentId: dealAttachments.attachmentId,
+          dealId: dealAttachments.dealId,
+          name: dealAttachments.name,
+          url: dealAttachments.url,
+          downloadUrl: dealAttachments.downloadUrl,
+          fileType: dealAttachments.fileType,
+          addedAtText: dealAttachments.addedAtText,
+          addedBy: dealAttachments.addedBy,
+          source: dealAttachments.source,
+          productId: dealAttachments.productId,
+          dealProductId: dealAttachments.dealProductId,
+          position: dealAttachments.position,
+          productPosition: dealAttachments.productPosition
+        })
+        .from(dealAttachments)
+        .where(inArray(dealAttachments.dealId, identifiers))
+        .orderBy(dealAttachments.dealId, dealAttachments.position, dealAttachments.attachmentId);
+
+      attachmentRows.forEach((row: StoredAttachmentRow) => {
+        if (
+          typeof row.dealId !== "number" ||
+          typeof row.attachmentId !== "string" ||
+          typeof row.name !== "string" ||
+          typeof row.url !== "string"
+        ) {
+          return;
+        }
+
+        const builder = builders.get(row.dealId);
+        if (!builder) {
+          return;
+        }
+
+        const attachment: DealAttachment = {
+          id: row.attachmentId,
+          name: row.name,
+          url: row.url,
+          downloadUrl: row.downloadUrl ?? null,
+          fileType: row.fileType ?? null,
+          addedAt: row.addedAtText ?? null,
+          addedBy: row.addedBy ?? null,
+          source: row.source === "product" || row.source === "local" ? row.source : "deal",
+          productId: row.productId ?? null,
+          dealProductId: row.dealProductId ?? null
+        };
+
+        builder.attachments.push({ attachment, position: row.position ?? 0 });
+
+        if (typeof row.dealProductId === "number") {
+          const container = builder.productContainers.get(row.dealProductId);
+          if (container) {
+            container.attachmentEntries.push({ attachment, position: row.productPosition ?? row.position ?? 0 });
+          }
+        }
+      });
+    }
 
     const results: DealRecord[] = [];
 
