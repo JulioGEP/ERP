@@ -147,12 +147,24 @@ type DealResponse = {
 };
 
 const parseErrorMessage = async (response: Response) => {
+  const fallbackMessage = 'No se pudo obtener la lista de presupuestos.';
+  const cloned = response.clone();
+
   try {
-    const payload = (await response.json()) as { message?: string };
-    return payload.message ?? 'No se pudo obtener la lista de presupuestos.';
+    const payload = (await cloned.json()) as { message?: string };
+    if (payload && typeof payload.message === 'string' && payload.message.trim().length > 0) {
+      return payload.message;
+    }
   } catch (error) {
+    // Ignoramos el error y probamos a leer el cuerpo como texto más abajo.
+  }
+
+  try {
     const text = await response.text();
-    return text || 'No se pudo obtener la lista de presupuestos.';
+    const trimmed = text.trim();
+    return trimmed.length > 0 ? trimmed : fallbackMessage;
+  } catch (error) {
+    return fallbackMessage;
   }
 };
 
