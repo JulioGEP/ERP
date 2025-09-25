@@ -127,6 +127,43 @@ type SharedStateEntry = {
 const inMemorySharedState = new Map<string, SharedStateEntry>();
 
 let sharedStateTablePromise: Promise<void> | null = null;
+let pipedriveIndexPromise: Promise<void> | null = null;
+
+const ensurePipedriveIndexes = async (): Promise<void> => {
+  if (!db) {
+    return;
+  }
+
+  if (!pipedriveIndexPromise) {
+    pipedriveIndexPromise = (async () => {
+      try {
+        await db.execute(sql`
+          create unique index if not exists organizations_pipedrive_id_key on organizations(pipedrive_id);
+          create unique index if not exists persons_pipedrive_id_key on persons(pipedrive_id);
+          create unique index if not exists deals_pipedrive_id_key on deals(pipedrive_id);
+          create unique index if not exists notes_pipedrive_id_key on notes(pipedrive_id);
+          create unique index if not exists documents_pipedrive_id_key on documents(pipedrive_id);
+        `);
+      } catch (error) {
+        console.error("No se pudieron asegurar los índices únicos para pipedrive_id", error);
+        throw error;
+      }
+    })();
+  }
+
+  try {
+    await pipedriveIndexPromise;
+  } catch (error) {
+    pipedriveIndexPromise = null;
+    throw error;
+  }
+};
+
+if (db) {
+  ensurePipedriveIndexes().catch((error) => {
+    console.error("No se pudieron preparar los índices de pipedrive_id", error);
+  });
+}
 
 const ensureSharedStateTable = async (): Promise<boolean> => {
   if (!db || !SHARED_STATE_PERSISTENCE_ENABLED) {
@@ -272,7 +309,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
       try {
         await db.execute(sql`
           create table if not exists deals (
-            id serial primary key,
+            id bigserial primary key,
             title text not null,
             client_id integer,
             client_name text,
@@ -292,7 +329,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
         await db.execute(sql`
           create table if not exists deal_formations (
             id serial primary key,
-            deal_id integer references deals(id) on delete cascade,
+            deal_id bigint references deals(id) on delete cascade,
             value text not null,
             position integer not null default 0,
             created_at timestamptz default now() not null
@@ -302,7 +339,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
         await db.execute(sql`
           create table if not exists deal_products (
             deal_product_id integer primary key,
-            deal_id integer references deals(id) on delete cascade,
+            deal_id bigint references deals(id) on delete cascade,
             product_id integer,
             name text not null,
             code text,
@@ -320,7 +357,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
         await db.execute(sql`
           create table if not exists deal_notes (
             note_id varchar(255) primary key,
-            deal_id integer references deals(id) on delete cascade,
+            deal_id bigint references deals(id) on delete cascade,
             content text not null,
             created_at_text text,
             author_name text,
@@ -336,7 +373,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
         await db.execute(sql`
           create table if not exists deal_attachments (
             attachment_id varchar(255) primary key,
-            deal_id integer references deals(id) on delete cascade,
+            deal_id bigint references deals(id) on delete cascade,
             name text not null,
             url text not null,
             download_url text,
@@ -3365,7 +3402,7 @@ app.get("/deals", async (c) => {
   }
 
   if (storageError) {
-    return c.json({ deals: [], page: 1, limit: 0, message: storageError.message }, 503);
+    return c.json({ deals: [], page: 1, limit: 0, message: storageError.message }, 500);
   }
 
   if (forceRefresh) {
@@ -3375,7 +3412,7 @@ app.get("/deals", async (c) => {
       deals = await listStoredDeals();
     } catch (error) {
       if (error instanceof DatabaseError) {
-        return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 503);
+        return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 500);
       }
 
       console.error(
@@ -3413,7 +3450,7 @@ app.put("/deals", async (c) => {
     await saveDealRecord(deal);
   } catch (error) {
     if (error instanceof DatabaseError) {
-      return c.json({ ok: false, message: error.message }, 503);
+      return c.json({ ok: false, message: error.message }, 500);
     }
 
     console.error("No se pudo guardar el presupuesto en la base de datos", error);
@@ -3442,7 +3479,7 @@ app.delete("/deals", async (c) => {
     existingDeal = await readStoredDeal(dealId);
   } catch (error) {
     if (error instanceof DatabaseError) {
-      return c.json({ ok: false, message: error.message }, 503);
+      return c.json({ ok: false, message: error.message }, 500);
     }
 
     console.error(`No se pudo consultar el presupuesto ${dealId} antes de eliminarlo`, error);
@@ -3454,7 +3491,7 @@ app.delete("/deals", async (c) => {
     removed = await deleteStoredDeal(dealId);
   } catch (error) {
     if (error instanceof DatabaseError) {
-      return c.json({ ok: false, message: error.message }, 503);
+      return c.json({ ok: false, message: error.message }, 500);
     }
 
     console.error(`No se pudo eliminar el presupuesto ${dealId}`, error);
@@ -3470,30 +3507,44 @@ app.delete("/deals", async (c) => {
 
 // Handler manual (evita el adapter y problemas de path)
 export const handler: Handler = async (event) => {
-  const host = event.headers["x-forwarded-host"] || event.headers["host"] || "localhost";
-  const scheme = event.headers["x-forwarded-proto"] || "http";
-  const path = event.path || "/.netlify/functions/api";
-  const query = event.rawQuery
-    ? `?${event.rawQuery}`
-    : event.queryStringParameters
-    ? `?${new URLSearchParams(event.queryStringParameters as Record<string, string>).toString()}`
-    : "";
-  const url = `${scheme}://${host}${path}${query}`;
+  try {
+    const host = event.headers["x-forwarded-host"] || event.headers["host"] || "localhost";
+    const scheme = event.headers["x-forwarded-proto"] || "http";
+    const path = event.path || "/.netlify/functions/api";
+    const query = event.rawQuery
+      ? `?${event.rawQuery}`
+      : event.queryStringParameters
+      ? `?${new URLSearchParams(event.queryStringParameters as Record<string, string>).toString()}`
+      : "";
+    const url = `${scheme}://${host}${path}${query}`;
 
-  const req = new Request(url, {
-    method: event.httpMethod,
-    headers: event.headers as any,
-    body:
-      event.body && !["GET", "HEAD"].includes(event.httpMethod)
-        ? event.isBase64Encoded
-          ? Buffer.from(event.body, "base64")
-          : event.body
-        : undefined
-  });
+    const req = new Request(url, {
+      method: event.httpMethod,
+      headers: event.headers as any,
+      body:
+        event.body && !["GET", "HEAD"].includes(event.httpMethod)
+          ? event.isBase64Encoded
+            ? Buffer.from(event.body, "base64")
+            : event.body
+          : undefined
+    });
 
-  const res = await app.fetch(req);
-  const headers: Record<string, string> = {};
-  res.headers.forEach((v, k) => (headers[k] = v));
-  const body = await res.text();
-  return { statusCode: res.status, headers, body };
+    const res = await app.fetch(req);
+    const headers: Record<string, string> = {};
+    res.headers.forEach((v, k) => (headers[k] = v));
+    const body = await res.text();
+    return { statusCode: res.status, headers, body };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error interno del servidor";
+    const code = (error as { code?: unknown })?.code;
+    const detail = (error as { detail?: unknown })?.detail;
+
+    console.error("DEALS API ERROR", { msg: message, code, detail });
+
+    return {
+      statusCode: 500,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ error: message })
+    };
+  }
 };
