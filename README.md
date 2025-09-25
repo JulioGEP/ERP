@@ -10,12 +10,10 @@ Arquitectura mínima para que puedas seguir trabajando con Codex sin depender de
 ## Pasos rápidos
 1. Copia `.env.example` a `.env` y rellena `DATABASE_URL`, `PIPEDRIVE_API_TOKEN`, etc.
 2. Instala deps: `npm i`
-3. Genera/Aplica esquema inicial (Drizzle):
-   - `npm run db:push`
-4. Arranca funciones en local:
-   - `npm run dev:functions`
+3. Arranca funciones en local:
+   - `netlify dev`
    - Endpoints: `http://localhost:8888/.netlify/functions/api/deals`
-5. Deploy en Netlify:
+4. Deploy en Netlify:
    - `netlify deploy` (o `netlify init` primero)
 
 ## Endpoints v1
@@ -29,16 +27,15 @@ Arquitectura mínima para que puedas seguir trabajando con Codex sin depender de
 - Implementa el upsert real por `pipedriveId` según tus campos.
 
 ## Estructura clave
-- `db/schema.ts` — Tablas (Drizzle)
+- `db/schema.ts` — Tipos de tablas utilizados por Drizzle
 - `netlify/functions/api.ts` — Endpoints (Hono)
 - `adapters/pipedrive.ts` — Llamadas a Pipedrive
 - `openapi.yaml` — Contrato de API
 
 ## Flujo sugerido (Codex-first)
-1. Cambios en `db/schema.ts` → `npm run db:push`
-2. Actualiza `openapi.yaml`
-3. Añade/ajusta handlers en `netlify/functions/api.ts`
-4. Prueba con Netlify Dev y React Query
+1. Ajusta `openapi.yaml`
+2. Añade/ajusta handlers en `netlify/functions/api.ts`
+3. Prueba con Netlify Dev y React Query
 
 ---
 
