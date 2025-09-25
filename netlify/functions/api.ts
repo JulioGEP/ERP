@@ -108,8 +108,7 @@ const PIPELINE_NAME: Record<string | number, string> = {
   2: "Consultoría"
 };
 
-const FEATURE_CREATE_DEAL_TABLES =
-  (process.env.FEATURE_CREATE_DEAL_TABLES ?? "").toLowerCase() === "true";
+const FEATURE_CREATE_DEAL_TABLES = false;
 
 type ListedDealRow = {
   id: unknown;
@@ -240,6 +239,10 @@ type SharedStateEntry = {
 
 const inMemorySharedState = new Map<string, SharedStateEntry>();
 
+type SharedStateOptions = {
+  disableInMemoryFallback?: boolean;
+};
+
 let sharedStateTablePromise: Promise<void> | null = null;
 let pipedriveIndexPromise: Promise<void> | null = null;
 
@@ -322,16 +325,34 @@ const ensureSharedStateTable = async (): Promise<boolean> => {
   }
 };
 
-const readSharedState = async <T>(key: string, fallback: T): Promise<T> => {
+const readSharedState = async <T>(
+  key: string,
+  fallback: T,
+  options: SharedStateOptions = {}
+): Promise<T> => {
+  const allowInMemoryFallback = options.disableInMemoryFallback !== true;
+
   if (!db || !SHARED_STATE_PERSISTENCE_ENABLED) {
-    const stored = inMemorySharedState.get(key);
-    return stored ? (stored.value as T) : fallback;
+    if (allowInMemoryFallback) {
+      const stored = inMemorySharedState.get(key);
+      return stored ? (stored.value as T) : fallback;
+    }
+
+    const message = `No se pudo leer el estado compartido para ${key} porque no hay base de datos disponible.`;
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   const ensured = await ensureSharedStateTable();
   if (!ensured) {
-    const stored = inMemorySharedState.get(key);
-    return stored ? (stored.value as T) : fallback;
+    if (allowInMemoryFallback) {
+      const stored = inMemorySharedState.get(key);
+      return stored ? (stored.value as T) : fallback;
+    }
+
+    const message = `No se pudo preparar la tabla de estado compartido para ${key}.`;
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   try {
@@ -353,24 +374,51 @@ const readSharedState = async <T>(key: string, fallback: T): Promise<T> => {
     return entry.value as T;
   } catch (error) {
     console.error(`No se pudo leer el estado compartido para ${key}`, error);
-    const stored = inMemorySharedState.get(key);
-    return stored ? (stored.value as T) : fallback;
+
+    if (allowInMemoryFallback) {
+      const stored = inMemorySharedState.get(key);
+      return stored ? (stored.value as T) : fallback;
+    }
+
+    const message = `No se pudo leer el estado compartido para ${key} desde la base de datos.`;
+    throw new DatabaseError(message);
   }
 };
 
-const writeSharedState = async <T>(key: string, value: T): Promise<void> => {
+const writeSharedState = async <T>(
+  key: string,
+  value: T,
+  options: SharedStateOptions = {}
+): Promise<void> => {
+  const allowInMemoryFallback = options.disableInMemoryFallback !== true;
   const serializedValue = value as unknown;
 
   const entry: SharedStateEntry = { value: serializedValue, updatedAt: new Date().toISOString() };
-  inMemorySharedState.set(key, entry);
+  if (allowInMemoryFallback) {
+    inMemorySharedState.set(key, entry);
+  } else {
+    inMemorySharedState.delete(key);
+  }
 
   if (!db || !SHARED_STATE_PERSISTENCE_ENABLED) {
-    return;
+    if (allowInMemoryFallback) {
+      return;
+    }
+
+    const message = `No se pudo guardar el estado compartido para ${key} porque no hay base de datos disponible.`;
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   const ensured = await ensureSharedStateTable();
   if (!ensured) {
-    return;
+    if (allowInMemoryFallback) {
+      return;
+    }
+
+    const message = `No se pudo preparar la tabla de estado compartido para ${key}.`;
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   try {
@@ -384,6 +432,11 @@ const writeSharedState = async <T>(key: string, value: T): Promise<void> => {
       });
   } catch (error) {
     console.error(`No se pudo guardar el estado compartido para ${key}`, error);
+
+    if (!allowInMemoryFallback) {
+      const message = `No se pudo guardar el estado compartido para ${key} en la base de datos.`;
+      throw new DatabaseError(message);
+    }
   }
 };
 
@@ -1397,7 +1450,11 @@ const extractDealIdentifier = (value: unknown): number | null => {
 };
 
 const removeDealReferencesFromSharedState = async (dealId: number): Promise<void> => {
-  const manualDeals = await readSharedState<unknown[]>(SHARED_STATE_KEYS.manualDeals, []);
+  const manualDeals = await readSharedState<unknown[]>(
+    SHARED_STATE_KEYS.manualDeals,
+    [],
+    DEAL_SHARED_STATE_OPTIONS
+  );
   const filteredManualDeals = manualDeals.filter((entry) => {
     if (!entry || typeof entry !== "object") {
       return true;
@@ -1408,10 +1465,18 @@ const removeDealReferencesFromSharedState = async (dealId: number): Promise<void
   });
 
   if (filteredManualDeals.length !== manualDeals.length) {
-    await writeSharedState(SHARED_STATE_KEYS.manualDeals, filteredManualDeals);
+    await writeSharedState(
+      SHARED_STATE_KEYS.manualDeals,
+      filteredManualDeals,
+      DEAL_SHARED_STATE_OPTIONS
+    );
   }
 
-  const hiddenDealCandidates = await readSharedState<unknown[]>(SHARED_STATE_KEYS.hiddenDeals, []);
+  const hiddenDealCandidates = await readSharedState<unknown[]>(
+    SHARED_STATE_KEYS.hiddenDeals,
+    [],
+    DEAL_SHARED_STATE_OPTIONS
+  );
   const hiddenDealIds = Array.isArray(hiddenDealCandidates)
     ? hiddenDealCandidates
         .map((value) => extractDealIdentifier(value))
@@ -1420,10 +1485,18 @@ const removeDealReferencesFromSharedState = async (dealId: number): Promise<void
   const filteredHiddenDealIds = hiddenDealIds.filter((hiddenDealId) => hiddenDealId !== dealId);
 
   if (filteredHiddenDealIds.length !== hiddenDealIds.length) {
-    await writeSharedState(SHARED_STATE_KEYS.hiddenDeals, filteredHiddenDealIds);
+    await writeSharedState(
+      SHARED_STATE_KEYS.hiddenDeals,
+      filteredHiddenDealIds,
+      DEAL_SHARED_STATE_OPTIONS
+    );
   }
 
-  const events = await readSharedState<unknown[]>(SHARED_STATE_KEYS.calendarEvents, []);
+  const events = await readSharedState<unknown[]>(
+    SHARED_STATE_KEYS.calendarEvents,
+    [],
+    DEAL_SHARED_STATE_OPTIONS
+  );
   const filteredEvents = events.filter((event) => {
     if (!event || typeof event !== "object") {
       return true;
@@ -1434,14 +1507,26 @@ const removeDealReferencesFromSharedState = async (dealId: number): Promise<void
   });
 
   if (filteredEvents.length !== events.length) {
-    await writeSharedState(SHARED_STATE_KEYS.calendarEvents, filteredEvents);
+    await writeSharedState(
+      SHARED_STATE_KEYS.calendarEvents,
+      filteredEvents,
+      DEAL_SHARED_STATE_OPTIONS
+    );
   }
 
-  const extrasStorage = await readSharedState<Record<string, unknown>>(SHARED_STATE_KEYS.dealExtras, {});
+  const extrasStorage = await readSharedState<Record<string, unknown>>(
+    SHARED_STATE_KEYS.dealExtras,
+    {},
+    DEAL_SHARED_STATE_OPTIONS
+  );
 
   if (Object.prototype.hasOwnProperty.call(extrasStorage, String(dealId))) {
     const { [String(dealId)]: _removed, ...remaining } = extrasStorage;
-    await writeSharedState(SHARED_STATE_KEYS.dealExtras, remaining as Record<string, unknown>);
+    await writeSharedState(
+      SHARED_STATE_KEYS.dealExtras,
+      remaining as Record<string, unknown>,
+      DEAL_SHARED_STATE_OPTIONS
+    );
   }
 };
 
@@ -1482,6 +1567,8 @@ const SHARED_STATE_KEYS = {
   dealExtras: "deal-extras",
   dealFieldOptions: "deal-field-options"
 } as const;
+
+const DEAL_SHARED_STATE_OPTIONS: SharedStateOptions = { disableInMemoryFallback: true };
 
 const parseBooleanFlag = (value: string | null): boolean => {
   if (!value) {
@@ -3391,8 +3478,20 @@ app.put("/calendar-events", async (c) => {
 });
 
 app.get("/manual-deals", async (c) => {
-  const deals = await readSharedState<unknown[]>(SHARED_STATE_KEYS.manualDeals, []);
-  return c.json({ deals });
+  try {
+    const deals = await readSharedState<unknown[]>(
+      SHARED_STATE_KEYS.manualDeals,
+      [],
+      DEAL_SHARED_STATE_OPTIONS
+    );
+    return c.json({ deals });
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ deals: [], message: error.message }, 500);
+    }
+
+    throw error;
+  }
 });
 
 app.put("/manual-deals", async (c) => {
@@ -3410,14 +3509,35 @@ app.put("/manual-deals", async (c) => {
     return c.json({ ok: false, message: "El formato de los presupuestos manuales no es válido." }, 400);
   }
 
-  await writeSharedState(SHARED_STATE_KEYS.manualDeals, deals);
+  try {
+    await writeSharedState(SHARED_STATE_KEYS.manualDeals, deals, DEAL_SHARED_STATE_OPTIONS);
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ ok: false, message: error.message }, 500);
+    }
+
+    throw error;
+  }
+
   return c.json({ ok: true, updatedAt: new Date().toISOString() });
 });
 
 app.get("/hidden-deals", async (c) => {
-  const stored = await readSharedState<unknown>(SHARED_STATE_KEYS.hiddenDeals, []);
-  const dealIds = sanitizeNumberList(stored);
-  return c.json({ dealIds });
+  try {
+    const stored = await readSharedState<unknown>(
+      SHARED_STATE_KEYS.hiddenDeals,
+      [],
+      DEAL_SHARED_STATE_OPTIONS
+    );
+    const dealIds = sanitizeNumberList(stored);
+    return c.json({ dealIds });
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ dealIds: [], message: error.message }, 500);
+    }
+
+    throw error;
+  }
 });
 
 app.put("/hidden-deals", async (c) => {
@@ -3432,7 +3552,20 @@ app.put("/hidden-deals", async (c) => {
   const input = (payload as { dealIds?: unknown }).dealIds ?? payload;
   const dealIds = sanitizeNumberList(input);
 
-  await writeSharedState(SHARED_STATE_KEYS.hiddenDeals, dealIds);
+  try {
+    await writeSharedState(
+      SHARED_STATE_KEYS.hiddenDeals,
+      dealIds,
+      DEAL_SHARED_STATE_OPTIONS
+    );
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ ok: false, message: error.message }, 500);
+    }
+
+    throw error;
+  }
+
   return c.json({ ok: true, dealIds, updatedAt: new Date().toISOString() });
 });
 
@@ -3450,9 +3583,28 @@ app.get("/deal-extras", async (c) => {
     return c.json({ dealId: null, extras: { notes: [], documents: [] }, message: "El identificador de presupuesto no es válido." }, 400);
   }
 
-  const storage = await readSharedState<Record<string, unknown>>(SHARED_STATE_KEYS.dealExtras, {});
-  const extras = sanitizeSharedExtras(storage[String(dealId)]);
-  return c.json({ dealId, extras });
+  try {
+    const storage = await readSharedState<Record<string, unknown>>(
+      SHARED_STATE_KEYS.dealExtras,
+      {},
+      DEAL_SHARED_STATE_OPTIONS
+    );
+    const extras = sanitizeSharedExtras(storage[String(dealId)]);
+    return c.json({ dealId, extras });
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json(
+        {
+          dealId: null,
+          extras: { notes: [], documents: [] },
+          message: error.message
+        },
+        500
+      );
+    }
+
+    throw error;
+  }
 });
 
 app.put("/deal-extras", async (c) => {
@@ -3478,9 +3630,32 @@ app.put("/deal-extras", async (c) => {
   }
 
   const extras = sanitizeSharedExtras(payload);
-  const storage = await readSharedState<Record<string, unknown>>(SHARED_STATE_KEYS.dealExtras, {});
+  let storage: Record<string, unknown>;
+  try {
+    storage = await readSharedState<Record<string, unknown>>(
+      SHARED_STATE_KEYS.dealExtras,
+      {},
+      DEAL_SHARED_STATE_OPTIONS
+    );
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ ok: false, message: error.message }, 500);
+    }
+
+    throw error;
+  }
+
   const updated = { ...storage, [String(dealId)]: extras };
-  await writeSharedState(SHARED_STATE_KEYS.dealExtras, updated);
+
+  try {
+    await writeSharedState(SHARED_STATE_KEYS.dealExtras, updated, DEAL_SHARED_STATE_OPTIONS);
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ ok: false, message: error.message }, 500);
+    }
+
+    throw error;
+  }
 
   return c.json({ ok: true, dealId, extras, updatedAt: new Date().toISOString() });
 });
