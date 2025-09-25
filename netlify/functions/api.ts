@@ -450,8 +450,72 @@ const saveDealRecord = async (deal: DealRecord): Promise<void> => {
   }
 };
 
+const extractDealIdentifier = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const removeDealReferencesFromSharedState = async (dealId: number): Promise<void> => {
+  const manualDeals = await readSharedState<unknown[]>(SHARED_STATE_KEYS.manualDeals, []);
+  const filteredManualDeals = manualDeals.filter((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return true;
+    }
+
+    const candidate = extractDealIdentifier((entry as { id?: unknown }).id);
+    return candidate !== dealId;
+  });
+
+  if (filteredManualDeals.length !== manualDeals.length) {
+    await writeSharedState(SHARED_STATE_KEYS.manualDeals, filteredManualDeals);
+  }
+
+  const hiddenDealCandidates = await readSharedState<unknown[]>(SHARED_STATE_KEYS.hiddenDeals, []);
+  const hiddenDealIds = Array.isArray(hiddenDealCandidates)
+    ? hiddenDealCandidates
+        .map((value) => extractDealIdentifier(value))
+        .filter((value): value is number => value !== null)
+    : [];
+  const filteredHiddenDealIds = hiddenDealIds.filter((hiddenDealId) => hiddenDealId !== dealId);
+
+  if (filteredHiddenDealIds.length !== hiddenDealIds.length) {
+    await writeSharedState(SHARED_STATE_KEYS.hiddenDeals, filteredHiddenDealIds);
+  }
+
+  const events = await readSharedState<unknown[]>(SHARED_STATE_KEYS.calendarEvents, []);
+  const filteredEvents = events.filter((event) => {
+    if (!event || typeof event !== "object") {
+      return true;
+    }
+
+    const candidate = extractDealIdentifier((event as { dealId?: unknown }).dealId);
+    return candidate !== dealId;
+  });
+
+  if (filteredEvents.length !== events.length) {
+    await writeSharedState(SHARED_STATE_KEYS.calendarEvents, filteredEvents);
+  }
+
+  const extrasStorage = await readSharedState<Record<string, unknown>>(SHARED_STATE_KEYS.dealExtras, {});
+
+  if (Object.prototype.hasOwnProperty.call(extrasStorage, String(dealId))) {
+    const { [String(dealId)]: _removed, ...remaining } = extrasStorage;
+    await writeSharedState(SHARED_STATE_KEYS.dealExtras, remaining as Record<string, unknown>);
+  }
+};
+
 const deleteStoredDeal = async (dealId: number): Promise<boolean> => {
   const removedFromMemory = inMemoryDeals.delete(dealId);
+
+  await removeDealReferencesFromSharedState(dealId);
 
   if (!db) {
     return removedFromMemory;
@@ -492,20 +556,7 @@ const parseBooleanFlag = (value: string | null): boolean => {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 };
 
-const parseDealIdentifier = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return null;
-};
+const parseDealIdentifier = (value: unknown): number | null => extractDealIdentifier(value);
 
 const sanitizeNumberList = (value: unknown): number[] => {
   if (!Array.isArray(value)) {
