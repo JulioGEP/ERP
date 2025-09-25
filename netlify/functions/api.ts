@@ -222,6 +222,154 @@ const createDatabaseClient = () => {
 
 const db = createDatabaseClient();
 
+const asBool = (v: any): boolean | null => {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().toLowerCase();
+  return ["true", "1", "yes", "si", "y", "t"].includes(s)
+    ? true
+    : ["false", "0", "no", "n", "f"].includes(s)
+    ? false
+    : null;
+};
+
+async function upsertOrganization(db: any, org: any): Promise<number> {
+  const rs = await db.execute(sql`
+    INSERT INTO organizations (pipedrive_id, name, cif, phone, address, created_at, updated_at)
+    VALUES (
+      ${org.id},
+      ${org.name ?? null},
+      ${org["6d39d015a33921753410c1bab0b067ca93b8cf2c"] ?? null},
+      ${org["b4379db06dfbe0758d84c2c2dd45ef04fa093b6d"] ?? null},
+      ${org.address ?? null},
+      now(),
+      now()
+    )
+    ON CONFLICT (pipedrive_id) DO UPDATE
+    SET
+      name = EXCLUDED.name,
+      cif = EXCLUDED.cif,
+      phone = EXCLUDED.phone,
+      address = EXCLUDED.address,
+      updated_at = now()
+    RETURNING id
+  `);
+  return Number((rs.rows as any[])[0].id);
+}
+
+async function upsertPerson(db: any, person: any, orgId: number | null): Promise<number> {
+  const pickPrimary = (arr: any[]) => {
+    if (!Array.isArray(arr)) return null;
+    const p = arr.find((x) => x?.primary === true) ?? arr[0];
+    return p?.value ?? p ?? null;
+  };
+  const email = Array.isArray(person.email)
+    ? pickPrimary(person.email)
+    : person.email ?? null;
+  const phone = Array.isArray(person.phone)
+    ? pickPrimary(person.phone)
+    : person.phone ?? null;
+
+  const rs = await db.execute(sql`
+    INSERT INTO persons (pipedrive_id, org_id, first_name, last_name, email, phone, created_at, updated_at)
+    VALUES (
+      ${person.id},
+      ${orgId},
+      ${person.first_name ?? null},
+      ${person.last_name ?? null},
+      ${email ?? null},
+      ${phone ?? null},
+      now(),
+      now()
+    )
+    ON CONFLICT (pipedrive_id) DO UPDATE
+    SET
+      org_id = EXCLUDED.org_id,
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      email = EXCLUDED.email,
+      phone = EXCLUDED.phone,
+      updated_at = now()
+    RETURNING id
+  `);
+  return Number((rs.rows as any[])[0].id);
+}
+
+async function upsertDeal(
+  db: any,
+  deal: any,
+  orgId: number | null,
+  personId: number | null,
+  products: any[]
+): Promise<number> {
+  const isTraining = (p: any) =>
+    String(p?.product?.code ?? p?.code ?? "").toLowerCase().includes("form-");
+  const trainings = products
+    .filter(isTraining)
+    .map((p) => p.product?.name ?? p.name)
+    .filter(Boolean);
+  const extras = products
+    .filter((p) => !isTraining(p))
+    .map((p) => p.product?.name ?? p.name)
+    .filter(Boolean);
+
+  const trainingStr = trainings.join(", ");
+  const prodExtraStr = extras.join(", ");
+
+  const rs = await db.execute(sql`
+    INSERT INTO deals (
+      pipedrive_id,
+      org_id,
+      person_id,
+      pipeline_id,
+      training,
+      prod_extra,
+      hours,
+      deal_direction,
+      site,
+      caes,
+      fundae,
+      hotel_night,
+      status,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      ${deal.id},
+      ${orgId},
+      ${personId},
+      ${deal.pipeline_id ?? null},
+      ${trainingStr || null},
+      ${prodExtraStr || null},
+      ${deal["38f11c8876ecde803a027fbf3c9041fda2ae7eb7"] ?? null},
+      ${deal["8b2a7570f5ba8aa4754f061cd9dc92fd778376a7"] ?? null},
+      ${deal["676d6bd51e52999c582c01f67c99a35ed30bf6ae"] ?? null},
+      ${asBool(deal["e1971bf3a21d48737b682bf8d864ddc5eb15a351"])},
+      ${asBool(deal["245d60d4d18aec40ba888998ef92e5d00e494583"])},
+      ${asBool(deal["c3a6daf8eb5b4e59c3c07cda8e01f43439101269"])},
+      ${deal.status ?? String(deal.stage_id ?? "")},
+      now(),
+      now()
+    )
+    ON CONFLICT (pipedrive_id) DO UPDATE
+    SET
+      org_id = EXCLUDED.org_id,
+      person_id = EXCLUDED.person_id,
+      pipeline_id = EXCLUDED.pipeline_id,
+      training = EXCLUDED.training,
+      prod_extra = EXCLUDED.prod_extra,
+      hours = EXCLUDED.hours,
+      deal_direction = EXCLUDED.deal_direction,
+      site = EXCLUDED.site,
+      caes = EXCLUDED.caes,
+      fundae = EXCLUDED.fundae,
+      hotel_night = EXCLUDED.hotel_night,
+      status = EXCLUDED.status,
+      updated_at = now()
+    RETURNING id
+  `);
+  return Number((rs.rows as any[])[0].id);
+}
+
 const SHARED_STATE_PERSISTENCE_ENABLED = (() => {
   const flag = process.env.ENABLE_SHARED_STATE_PERSISTENCE ?? process.env.SYNC_SHARED_STATE_TO_DATABASE;
 
@@ -3348,6 +3496,165 @@ const synchronizeDealsFromPipedrive = async (
 const app = new Hono().basePath("/.netlify/functions/api");
 app.use("*", cors());
 
+const parseNumericId = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = Number.parseInt(trimmed, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const normaliseOrganizationPayload = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = parseNumericId(record.id ?? record["pipedrive_id"] ?? record["organization_id"]);
+
+  if (id === null) {
+    return null;
+  }
+
+  return { ...record, id };
+};
+
+const normalisePersonPayload = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = parseNumericId(record.id ?? record["pipedrive_id"] ?? record["person_id"]);
+
+  if (id === null) {
+    return null;
+  }
+
+  const orgId = parseNumericId(record["org_id"] ?? record["organization_id"] ?? record["orgId"]);
+
+  return orgId === null ? { ...record, id } : { ...record, id, org_id: orgId };
+};
+
+const normaliseDealPayload = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = parseNumericId(record.id ?? record["pipedrive_id"] ?? record["deal_id"]);
+
+  if (id === null) {
+    return null;
+  }
+
+  const orgId = parseNumericId(record["org_id"] ?? record["organization_id"] ?? record["orgId"]);
+  const personId = parseNumericId(record["person_id"] ?? record["personId"] ?? record["contact_id"]);
+
+  return {
+    ...record,
+    id,
+    ...(orgId !== null ? { org_id: orgId } : {}),
+    ...(personId !== null ? { person_id: personId } : {})
+  };
+};
+
+const normaliseProductsForUpsert = (candidates: unknown[]): any[] => {
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+
+    if (candidate && typeof candidate === "object") {
+      const record = candidate as Record<string, unknown>;
+      if (Array.isArray(record.data)) {
+        return record.data as any[];
+      }
+    }
+  }
+
+  return [];
+};
+
+const findOrganizationIdByPipedriveId = async (
+  dbClient: any,
+  pipedriveId: number | null
+): Promise<number | null> => {
+  if (pipedriveId === null) {
+    return null;
+  }
+
+  try {
+    const rs = await dbClient.execute(sql`
+      SELECT id FROM organizations WHERE pipedrive_id = ${pipedriveId} LIMIT 1
+    `);
+    const row = (rs.rows as any[])[0];
+    if (!row) {
+      return null;
+    }
+
+    const id = parseNumericId(row.id);
+    return id !== null ? id : null;
+  } catch (error) {
+    console.error("No se pudo consultar la organización por pipedrive_id", error);
+    return null;
+  }
+};
+
+const findPersonIdByPipedriveId = async (
+  dbClient: any,
+  pipedriveId: number | null
+): Promise<number | null> => {
+  if (pipedriveId === null) {
+    return null;
+  }
+
+  try {
+    const rs = await dbClient.execute(sql`
+      SELECT id FROM persons WHERE pipedrive_id = ${pipedriveId} LIMIT 1
+    `);
+    const row = (rs.rows as any[])[0];
+    if (!row) {
+      return null;
+    }
+
+    const id = parseNumericId(row.id);
+    return id !== null ? id : null;
+  } catch (error) {
+    console.error("No se pudo consultar la persona por pipedrive_id", error);
+    return null;
+  }
+};
+
+const parseLocalIdentifier = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = Number.parseInt(trimmed, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
 app.post("/db-smoke", async (c) => {
   try {
     if (!db) throw new Error("DATABASE_URL missing");
@@ -3363,6 +3670,192 @@ app.post("/db-smoke", async (c) => {
   } catch (e: any) {
     console.error("DB-SMOKE FAIL", e);
     return c.json({ ok: false, error: String(e?.message ?? e) }, 500);
+  }
+});
+
+app.post("/pipedrive/organizations", async (c) => {
+  if (!db) {
+    return c.json({ ok: false, message: "No hay conexión con la base de datos." }, 500);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch (error) {
+    console.error("No se pudo leer la organización a sincronizar", error);
+    return c.json({ ok: false, message: "No se pudo leer la organización proporcionada." }, 400);
+  }
+
+  const organization = normaliseOrganizationPayload(
+    (payload as { organization?: unknown }).organization ?? payload
+  );
+
+  if (!organization) {
+    return c.json({ ok: false, message: "Debes proporcionar una organización válida." }, 400);
+  }
+
+  try {
+    await ensurePipedriveIndexes();
+  } catch (error) {
+    console.error("No se pudieron preparar los índices para organizaciones", error);
+  }
+
+  try {
+    const id = await upsertOrganization(db, organization);
+    return c.json({ ok: true, id });
+  } catch (error) {
+    console.error("No se pudo guardar la organización en la base de datos", error);
+    return c.json({ ok: false, message: "No se pudo guardar la organización." }, 500);
+  }
+});
+
+app.post("/pipedrive/persons", async (c) => {
+  if (!db) {
+    return c.json({ ok: false, message: "No hay conexión con la base de datos." }, 500);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch (error) {
+    console.error("No se pudo leer la persona a sincronizar", error);
+    return c.json({ ok: false, message: "No se pudo leer la persona proporcionada." }, 400);
+  }
+
+  const person = normalisePersonPayload((payload as { person?: unknown }).person ?? payload);
+
+  if (!person) {
+    return c.json({ ok: false, message: "Debes proporcionar una persona válida." }, 400);
+  }
+
+  let organizationId = parseLocalIdentifier(
+    (payload as { organizationId?: unknown }).organizationId ?? (payload as any)?.orgId
+  );
+
+  const organizationInput = (payload as { organization?: unknown }).organization;
+
+  try {
+    await ensurePipedriveIndexes();
+  } catch (error) {
+    console.error("No se pudieron preparar los índices para personas", error);
+  }
+
+  try {
+    if (organizationId === null && organizationInput) {
+      const normalizedOrganization = normaliseOrganizationPayload(organizationInput);
+      if (normalizedOrganization) {
+        organizationId = await upsertOrganization(db, normalizedOrganization);
+      }
+    }
+
+    if (organizationId === null) {
+      const pipedriveOrgId = parseNumericId(
+        (payload as { organizationPipedriveId?: unknown }).organizationPipedriveId ??
+          person.org_id
+      );
+      organizationId = await findOrganizationIdByPipedriveId(db, pipedriveOrgId);
+    }
+
+    const id = await upsertPerson(db, person, organizationId);
+    return c.json({ ok: true, id, organizationId });
+  } catch (error) {
+    console.error("No se pudo guardar la persona en la base de datos", error);
+    return c.json({ ok: false, message: "No se pudo guardar la persona." }, 500);
+  }
+});
+
+app.post("/pipedrive/deals", async (c) => {
+  if (!db) {
+    return c.json({ ok: false, message: "No hay conexión con la base de datos." }, 500);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await c.req.json();
+  } catch (error) {
+    console.error("No se pudo leer el deal a sincronizar", error);
+    return c.json({ ok: false, message: "No se pudo leer el deal proporcionado." }, 400);
+  }
+
+  const deal = normaliseDealPayload((payload as { deal?: unknown }).deal ?? payload);
+
+  if (!deal) {
+    return c.json({ ok: false, message: "Debes proporcionar un deal válido." }, 400);
+  }
+
+  let organizationId = parseLocalIdentifier(
+    (payload as { organizationId?: unknown }).organizationId ?? (payload as any)?.orgId
+  );
+
+  let personId = parseLocalIdentifier(
+    (payload as { personId?: unknown }).personId ?? (payload as any)?.contactId
+  );
+
+  const organizationInput = (payload as { organization?: unknown }).organization;
+  const personInput = (payload as { person?: unknown }).person;
+
+  try {
+    await ensurePipedriveIndexes();
+  } catch (error) {
+    console.error("No se pudieron preparar los índices para deals", error);
+  }
+
+  try {
+    if (organizationInput) {
+      const normalizedOrganization = normaliseOrganizationPayload(organizationInput);
+      if (normalizedOrganization) {
+        organizationId = await upsertOrganization(db, normalizedOrganization);
+      }
+    }
+
+    if (organizationId === null) {
+      const pipedriveOrgId = parseNumericId(
+        (payload as { organizationPipedriveId?: unknown }).organizationPipedriveId ??
+          deal.org_id
+      );
+      organizationId = await findOrganizationIdByPipedriveId(db, pipedriveOrgId);
+    }
+
+    if (personInput) {
+      const normalizedPerson = normalisePersonPayload(personInput);
+      if (normalizedPerson) {
+        const personOrgId =
+          organizationId !== null
+            ? organizationId
+            : await findOrganizationIdByPipedriveId(
+                db,
+                parseNumericId(normalizedPerson.org_id)
+              );
+        personId = await upsertPerson(db, normalizedPerson, personOrgId);
+        if (organizationId === null && personOrgId !== null) {
+          organizationId = personOrgId;
+        }
+      }
+    }
+
+    if (personId === null) {
+      const pipedrivePersonId = parseNumericId(
+        (payload as { personPipedriveId?: unknown }).personPipedriveId ?? deal.person_id
+      );
+      personId = await findPersonIdByPipedriveId(db, pipedrivePersonId);
+    }
+
+    const products = normaliseProductsForUpsert([
+      (payload as { products?: unknown }).products,
+      (payload as any)?.dealProducts,
+      deal["products"],
+      deal["items"],
+      deal["product_items"],
+      deal["deal_products"],
+      deal["dealProducts"],
+      deal["productItems"]
+    ]);
+
+    const id = await upsertDeal(db, deal, organizationId, personId, products);
+    return c.json({ ok: true, id, organizationId, personId });
+  } catch (error) {
+    console.error("No se pudo guardar el deal en la base de datos", error);
+    return c.json({ ok: false, message: "No se pudo guardar el deal." }, 500);
   }
 });
 
