@@ -81,6 +81,85 @@ const PIPELINE_NAME: Record<string | number, string> = {
   2: "Consultoría"
 };
 
+type ListedDealRow = {
+  id: unknown;
+  pipedrive_id: unknown;
+  client_id: unknown;
+  client_name: unknown;
+  sede: unknown;
+  address: unknown;
+  caes: unknown;
+  fundae: unknown;
+  hotel_pernocta: unknown;
+  pipeline_id: unknown;
+  pipeline_name: unknown;
+  training: unknown;
+  prod_extra: unknown;
+  hours: unknown;
+  status: unknown;
+  won_date: unknown;
+  updated_at: unknown;
+};
+
+async function listDeals(db: any, ids?: number[]) {
+  const filter =
+    ids && ids.length
+      ? sql`where d.id in (${sql.join(ids.map((x) => sql`${x}`), sql`,`)})`
+      : sql``;
+
+  const rs = await db.execute(sql`
+    select
+      d.id,
+      d.pipedrive_id,
+      d.org_id as client_id,
+      o.name as client_name,
+      d.site as sede,
+      d.deal_direction as address,
+      d.caes,
+      d.fundae,
+      d.hotel_night as hotel_pernocta,
+      d.pipeline_id,
+      d.training,
+      d.prod_extra,
+      d.hours,
+      d.status,
+      d.updated_at
+    from deals d
+    left join organizations o on o.id = d.org_id
+    ${filter}
+    order by d.updated_at desc, d.id desc
+  `);
+
+  return (rs.rows as ListedDealRow[]).map((r) => {
+    const rawPipelineId = r.pipeline_id;
+    let pipelineName: string | null = null;
+
+    if (typeof rawPipelineId === "number" || typeof rawPipelineId === "string") {
+      pipelineName = PIPELINE_NAME[rawPipelineId as string | number] ?? null;
+    }
+
+    return {
+      id: r.id,
+      pipedrive_id: r.pipedrive_id,
+      client_id: r.client_id,
+      client_name: r.client_name,
+      sede: r.sede,
+      address: r.address,
+      caes: r.caes,
+      fundae: r.fundae,
+      hotel_pernocta: r.hotel_pernocta,
+      pipeline_id: r.pipeline_id,
+      pipeline_name: pipelineName,
+      training: r.training,
+      prod_extra: r.prod_extra,
+      hours: r.hours,
+      status: r.status,
+      won_date: null,
+      updated_at: r.updated_at
+    };
+  });
+}
+
 type RelatedEntity = {
   id: number | null;
   name: string | null;
@@ -601,32 +680,7 @@ const loadDealsFromDatabase = async (
   const { dealIds } = options;
 
   try {
-    const filterClause = dealIds && dealIds.length > 0
-      ? sql`where d.id in (${sql.join(dealIds.map((id) => sql`${id}`), sql`, `)})`
-      : sql``;
-
-    const baseResult = await db.execute(sql`
-      select
-        d.id,
-        d.pipedrive_id,
-        d.org_id as client_id,
-        o.name as client_name,
-        d.site as sede,
-        d.deal_direction as address,
-        d.caes,
-        d.fundae,
-        d.hotel_night as hotel_pernocta,
-        d.pipeline_id,
-        d.training,
-        d.prod_extra,
-        d.hours,
-        d.status,
-        d.updated_at
-      from deals d
-      left join organizations o on o.id = d.org_id
-      ${filterClause}
-      order by d.updated_at desc, d.id desc
-    `);
+    const baseResult = await listDeals(db, dealIds);
 
     const baseRows: StoredDealRow[] = [];
 
@@ -669,21 +723,18 @@ const loadDealsFromDatabase = async (
       return null;
     };
 
-    (baseResult.rows as Record<string, unknown>[]).forEach((row) => {
-
+    (baseResult as Record<string, unknown>[]).forEach((row) => {
       const dealId = parseNumeric(row.id);
       if (dealId === null) {
         return;
       }
       const pipelineId = parseNumeric(row.pipeline_id);
-      const titleRaw = row.title;
+      const pipelineName =
+        parseString(row.pipeline_name) ?? (pipelineId !== null ? PIPELINE_NAME[pipelineId] ?? null : null);
 
       baseRows.push({
         dealId,
-        title:
-          typeof titleRaw === "string" && titleRaw.trim().length > 0
-            ? titleRaw
-            : `Presupuesto #${dealId}`,
+        title: `Presupuesto #${dealId}`,
         clientId: parseNumeric(row.client_id),
         clientName: parseString(row.client_name),
         sede: parseString(row.sede),
@@ -692,7 +743,7 @@ const loadDealsFromDatabase = async (
         fundae: parseString(row.fundae),
         hotelPernocta: parseString(row.hotel_pernocta),
         pipelineId,
-        pipelineName: pipelineId !== null ? PIPELINE_NAME[pipelineId] ?? null : null,
+        pipelineName,
         wonDate: null,
         updatedAt: parseDate(row.updated_at)
       });
