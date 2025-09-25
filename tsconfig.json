@@ -12,5 +12,12 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["netlify/functions/**/*.ts", "db/**/*.ts", "shared/**/*.ts", "adapters/**/*.ts"]
+  "include": [
+    "netlify/functions/**/*.ts",
+    "db/**/*.ts",
+    "shared/**/*.ts",
+    "adapters/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.d.ts"
+  ]
 }
