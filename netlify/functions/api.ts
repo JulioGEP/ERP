@@ -225,6 +225,43 @@ const writeSharedState = async <T>(key: string, value: T): Promise<void> => {
 
 let dealStorageSetupPromise: Promise<void> | null = null;
 
+const verifyDealStorageTables = async (): Promise<boolean> => {
+  if (!db) {
+    return false;
+  }
+
+  const checks: Array<{ name: string; verify: () => Promise<unknown> }> = [
+    { name: "deals", verify: () => db.select({ id: deals.dealId }).from(deals).limit(1) },
+    {
+      name: "deal_formations",
+      verify: () => db.select({ id: dealFormations.id }).from(dealFormations).limit(1)
+    },
+    {
+      name: "deal_products",
+      verify: () => db.select({ id: dealProducts.dealProductId }).from(dealProducts).limit(1)
+    },
+    {
+      name: "deal_notes",
+      verify: () => db.select({ id: dealNotes.noteId }).from(dealNotes).limit(1)
+    },
+    {
+      name: "deal_attachments",
+      verify: () => db.select({ id: dealAttachments.attachmentId }).from(dealAttachments).limit(1)
+    }
+  ];
+
+  for (const { name, verify } of checks) {
+    try {
+      await verify();
+    } catch (error) {
+      console.error(`No se pudo verificar la existencia de la tabla ${name}`, error);
+      return false;
+    }
+  }
+
+  return true;
+};
+
 const ensureDealStorageTables = async (): Promise<boolean> => {
   if (!db) {
     return false;
@@ -232,94 +269,97 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
 
   if (!dealStorageSetupPromise) {
     dealStorageSetupPromise = (async () => {
-      await db.execute(sql`
-        create table if not exists deals (
-          deal_id integer primary key,
-          title text not null,
-          client_id integer,
-          client_name text,
-          sede text,
-          address text,
-          caes text,
-          fundae text,
-          hotel_pernocta text,
-          pipeline_id integer,
-          pipeline_name text,
-          won_date text,
-          created_at timestamptz default now() not null,
-          updated_at timestamptz default now() not null
-        )
-      `);
+      try {
+        await db.execute(sql`
+          create table if not exists deals (
+            deal_id integer primary key,
+            title text not null,
+            client_id integer,
+            client_name text,
+            sede text,
+            address text,
+            caes text,
+            fundae text,
+            hotel_pernocta text,
+            pipeline_id integer,
+            pipeline_name text,
+            won_date text,
+            created_at timestamptz default now() not null,
+            updated_at timestamptz default now() not null
+          )
+        `);
 
-      await db.execute(sql`
-        create table if not exists deal_formations (
-          id serial primary key,
-          deal_id integer references deals(deal_id) on delete cascade,
-          value text not null,
-          position integer not null default 0,
-          created_at timestamptz default now() not null
-        )
-      `);
+        await db.execute(sql`
+          create table if not exists deal_formations (
+            id serial primary key,
+            deal_id integer references deals(deal_id) on delete cascade,
+            value text not null,
+            position integer not null default 0,
+            created_at timestamptz default now() not null
+          )
+        `);
 
-      await db.execute(sql`
-        create table if not exists deal_products (
-          deal_product_id integer primary key,
-          deal_id integer references deals(deal_id) on delete cascade,
-          product_id integer,
-          name text not null,
-          code text,
-          quantity double precision,
-          item_price double precision,
-          recommended_hours double precision,
-          recommended_hours_raw text,
-          is_training boolean not null default false,
-          position integer not null default 0,
-          created_at timestamptz default now() not null,
-          updated_at timestamptz default now() not null
-        )
-      `);
+        await db.execute(sql`
+          create table if not exists deal_products (
+            deal_product_id integer primary key,
+            deal_id integer references deals(deal_id) on delete cascade,
+            product_id integer,
+            name text not null,
+            code text,
+            quantity double precision,
+            item_price double precision,
+            recommended_hours double precision,
+            recommended_hours_raw text,
+            is_training boolean not null default false,
+            position integer not null default 0,
+            created_at timestamptz default now() not null,
+            updated_at timestamptz default now() not null
+          )
+        `);
 
-      await db.execute(sql`
-        create table if not exists deal_notes (
-          note_id varchar(255) primary key,
-          deal_id integer references deals(deal_id) on delete cascade,
-          content text not null,
-          created_at_text text,
-          author_name text,
-          source varchar(32) not null default 'deal',
-          product_id integer,
-          deal_product_id integer,
-          position integer not null default 0,
-          product_position integer,
-          created_at timestamptz default now() not null
-        )
-      `);
+        await db.execute(sql`
+          create table if not exists deal_notes (
+            note_id varchar(255) primary key,
+            deal_id integer references deals(deal_id) on delete cascade,
+            content text not null,
+            created_at_text text,
+            author_name text,
+            source varchar(32) not null default 'deal',
+            product_id integer,
+            deal_product_id integer,
+            position integer not null default 0,
+            product_position integer,
+            created_at timestamptz default now() not null
+          )
+        `);
 
-      await db.execute(sql`
-        create table if not exists deal_attachments (
-          attachment_id varchar(255) primary key,
-          deal_id integer references deals(deal_id) on delete cascade,
-          name text not null,
-          url text not null,
-          download_url text,
-          file_type text,
-          added_at_text text,
-          added_by text,
-          source varchar(32) not null default 'deal',
-          product_id integer,
-          deal_product_id integer,
-          position integer not null default 0,
-          product_position integer,
-          created_at timestamptz default now() not null
-        )
-      `);
-    })().catch((error) => {
-      console.error("No se pudieron inicializar las tablas de deals", error);
-      // Restablecemos la promesa para permitir reintentos en posteriores llamadas
-      // cuando el fallo sea transitorio.
-      dealStorageSetupPromise = null;
-      throw error;
-    });
+        await db.execute(sql`
+          create table if not exists deal_attachments (
+            attachment_id varchar(255) primary key,
+            deal_id integer references deals(deal_id) on delete cascade,
+            name text not null,
+            url text not null,
+            download_url text,
+            file_type text,
+            added_at_text text,
+            added_by text,
+            source varchar(32) not null default 'deal',
+            product_id integer,
+            deal_product_id integer,
+            position integer not null default 0,
+            product_position integer,
+            created_at timestamptz default now() not null
+          )
+        `);
+      } catch (error) {
+        console.error("No se pudieron inicializar las tablas de deals", error);
+
+        const verified = await verifyDealStorageTables();
+        if (!verified) {
+          throw error;
+        }
+      }
+    })();
   }
 
   try {
