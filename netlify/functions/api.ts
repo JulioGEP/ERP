@@ -82,6 +82,13 @@ type RelatedEntity = {
   address: string | null;
 };
 
+class DatabaseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DatabaseError";
+  }
+}
+
 const createDatabaseClient = () => {
   const connectionString = process.env.DATABASE_URL;
 
@@ -216,13 +223,6 @@ const writeSharedState = async <T>(key: string, value: T): Promise<void> => {
   }
 };
 
-type DealStorageEntry = {
-  deal: DealRecord;
-  updatedAt: string;
-};
-
-const inMemoryDeals = new Map<number, DealStorageEntry>();
-
 let dealStorageSetupPromise: Promise<void> | null = null;
 
 const ensureDealStorageTables = async (): Promise<boolean> => {
@@ -328,12 +328,6 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
   }
 };
 
-const readDealsFromMemory = (): DealRecord[] => {
-  const entries = Array.from(inMemoryDeals.values());
-  entries.sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
-  return entries.map((entry) => entry.deal);
-};
-
 const sanitizeStoredDealRecord = (value: unknown): DealRecord | null => {
   if (!value || typeof value !== "object") {
     return null;
@@ -424,21 +418,6 @@ const sanitizeStoredDealRecord = (value: unknown): DealRecord | null => {
   } satisfies DealRecord;
 };
 
-const storeDealInCache = (deal: DealRecord, updatedAt?: Date | string | null) => {
-  let timestamp: string;
-
-  if (updatedAt instanceof Date) {
-    timestamp = updatedAt.toISOString();
-  } else if (typeof updatedAt === "string") {
-    const parsed = new Date(updatedAt);
-    timestamp = Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-  } else {
-    timestamp = new Date().toISOString();
-  }
-
-  inMemoryDeals.set(deal.id, { deal, updatedAt: timestamp });
-};
-
 type StoredDealRow = {
   dealId: number;
   title: string;
@@ -508,380 +487,391 @@ const loadDealsFromDatabase = async (
   options: { dealIds?: number[] } = {}
 ): Promise<DealRecord[]> => {
   if (!db) {
-    return [];
+    const message = "No hay conexión con la base de datos; no se pudieron leer los presupuestos.";
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   const ensured = await ensureDealStorageTables();
   if (!ensured) {
-    return [];
+    const message = "No se pudieron preparar las tablas de presupuestos en la base de datos.";
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   const { dealIds } = options;
 
-  let baseQuery = db
-    .select({
-      dealId: deals.dealId,
-      title: deals.title,
-      clientId: deals.clientId,
-      clientName: deals.clientName,
-      sede: deals.sede,
-      address: deals.address,
-      caes: deals.caes,
-      fundae: deals.fundae,
-      hotelPernocta: deals.hotelPernocta,
-      pipelineId: deals.pipelineId,
-      pipelineName: deals.pipelineName,
-      wonDate: deals.wonDate,
-      updatedAt: deals.updatedAt
-    })
-    .from(deals);
+  try {
+    let baseQuery = db
+      .select({
+        dealId: deals.dealId,
+        title: deals.title,
+        clientId: deals.clientId,
+        clientName: deals.clientName,
+        sede: deals.sede,
+        address: deals.address,
+        caes: deals.caes,
+        fundae: deals.fundae,
+        hotelPernocta: deals.hotelPernocta,
+        pipelineId: deals.pipelineId,
+        pipelineName: deals.pipelineName,
+        wonDate: deals.wonDate,
+        updatedAt: deals.updatedAt
+      })
+      .from(deals);
 
-  if (dealIds && dealIds.length > 0) {
-    baseQuery = baseQuery.where(inArray(deals.dealId, dealIds));
-  }
+    if (dealIds && dealIds.length > 0) {
+      baseQuery = baseQuery.where(inArray(deals.dealId, dealIds));
+    }
 
-  const baseRows = await baseQuery.orderBy(desc(deals.updatedAt), desc(deals.dealId));
+    const baseRows = await baseQuery.orderBy(desc(deals.updatedAt), desc(deals.dealId));
 
-  if (baseRows.length === 0) {
-    return [];
-  }
+    if (baseRows.length === 0) {
+      return [];
+    }
 
-  const identifiers = baseRows
-    .map((row) => row.dealId)
-    .filter((value): value is number => typeof value === "number");
+    const identifiers = baseRows
+      .map((row) => row.dealId)
+      .filter((value): value is number => typeof value === "number");
 
-  if (identifiers.length === 0) {
-    return [];
-  }
+    if (identifiers.length === 0) {
+      return [];
+    }
 
-  const builders = new Map<
-    number,
-    {
-      base: StoredDealRow;
-      formations: { value: string; position: number }[];
-      productContainers: Map<
-        number,
-        {
-          product: DealProduct;
-          position: number;
-          noteEntries: { note: DealNote; position: number }[];
-          attachmentEntries: { attachment: DealAttachment; position: number }[];
+    const builders = new Map<
+      number,
+      {
+        base: StoredDealRow;
+        formations: { value: string; position: number }[];
+        productContainers: Map<
+          number,
+          {
+            product: DealProduct;
+            position: number;
+            noteEntries: { note: DealNote; position: number }[];
+            attachmentEntries: { attachment: DealAttachment; position: number }[];
+          }
+        >;
+        trainingProducts: { product: DealProduct; position: number }[];
+        extraProducts: { product: DealProduct; position: number }[];
+        notes: { note: DealNote; position: number }[];
+        attachments: { attachment: DealAttachment; position: number }[];
+      }
+    >();
+
+    baseRows.forEach((row) => {
+      builders.set(row.dealId, {
+        base: row,
+        formations: [],
+        productContainers: new Map(),
+        trainingProducts: [],
+        extraProducts: [],
+        notes: [],
+        attachments: []
+      });
+    });
+
+    const formationRows = await db
+      .select({
+        dealId: dealFormations.dealId,
+        value: dealFormations.value,
+        position: dealFormations.position
+      })
+      .from(dealFormations)
+      .where(inArray(dealFormations.dealId, identifiers))
+      .orderBy(dealFormations.dealId, dealFormations.position, dealFormations.id);
+
+    formationRows.forEach((row: StoredFormationRow) => {
+      if (typeof row.dealId !== "number" || typeof row.value !== "string") {
+        return;
+      }
+
+      const builder = builders.get(row.dealId);
+      if (!builder) {
+        return;
+      }
+
+      builder.formations.push({ value: row.value, position: row.position ?? 0 });
+    });
+
+    const productRows = await db
+      .select({
+        dealId: dealProducts.dealId,
+        dealProductId: dealProducts.dealProductId,
+        productId: dealProducts.productId,
+        name: dealProducts.name,
+        code: dealProducts.code,
+        quantity: dealProducts.quantity,
+        itemPrice: dealProducts.itemPrice,
+        recommendedHours: dealProducts.recommendedHours,
+        recommendedHoursRaw: dealProducts.recommendedHoursRaw,
+        isTraining: dealProducts.isTraining,
+        position: dealProducts.position
+      })
+      .from(dealProducts)
+      .where(inArray(dealProducts.dealId, identifiers))
+      .orderBy(dealProducts.dealId, dealProducts.position, dealProducts.dealProductId);
+
+    productRows.forEach((row: StoredProductRow) => {
+      if (typeof row.dealId !== "number" || typeof row.dealProductId !== "number") {
+        return;
+      }
+
+      const builder = builders.get(row.dealId);
+      if (!builder) {
+        return;
+      }
+
+      const product: DealProduct = {
+        dealProductId: row.dealProductId,
+        productId: row.productId ?? null,
+        name: row.name ?? `Producto ${row.dealProductId}`,
+        code: row.code ?? null,
+        quantity: typeof row.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0,
+        itemPrice: row.itemPrice ?? null,
+        recommendedHours: row.recommendedHours ?? null,
+        recommendedHoursRaw: row.recommendedHoursRaw ?? null,
+        notes: [],
+        attachments: [],
+        isTraining: Boolean(row.isTraining)
+      };
+
+      const container = {
+        product,
+        position: row.position ?? 0,
+        noteEntries: [] as { note: DealNote; position: number }[],
+        attachmentEntries: [] as { attachment: DealAttachment; position: number }[]
+      };
+
+      builder.productContainers.set(row.dealProductId, container);
+
+      if (product.isTraining) {
+        builder.trainingProducts.push({ product, position: container.position });
+      } else {
+        builder.extraProducts.push({ product, position: container.position });
+      }
+    });
+
+    const noteRows = await db
+      .select({
+        noteId: dealNotes.noteId,
+        dealId: dealNotes.dealId,
+        content: dealNotes.content,
+        createdAtText: dealNotes.createdAtText,
+        authorName: dealNotes.authorName,
+        source: dealNotes.source,
+        productId: dealNotes.productId,
+        dealProductId: dealNotes.dealProductId,
+        position: dealNotes.position,
+        productPosition: dealNotes.productPosition
+      })
+      .from(dealNotes)
+      .where(inArray(dealNotes.dealId, identifiers))
+      .orderBy(dealNotes.dealId, dealNotes.position, dealNotes.noteId);
+
+    noteRows.forEach((row: StoredNoteRow) => {
+      if (typeof row.dealId !== "number" || typeof row.noteId !== "string" || typeof row.content !== "string") {
+        return;
+      }
+
+      const builder = builders.get(row.dealId);
+      if (!builder) {
+        return;
+      }
+
+      const note: DealNote = {
+        id: row.noteId,
+        content: row.content,
+        createdAt: row.createdAtText ?? null,
+        authorName: row.authorName ?? null,
+        source: row.source === "product" || row.source === "local" ? row.source : "deal",
+        productId: row.productId ?? null,
+        dealProductId: row.dealProductId ?? null
+      };
+
+      builder.notes.push({ note, position: row.position ?? 0 });
+
+      if (typeof row.dealProductId === "number") {
+        const container = builder.productContainers.get(row.dealProductId);
+        if (container) {
+          container.noteEntries.push({ note, position: row.productPosition ?? row.position ?? 0 });
         }
-      >;
-      trainingProducts: { product: DealProduct; position: number }[];
-      extraProducts: { product: DealProduct; position: number }[];
-      notes: { note: DealNote; position: number }[];
-      attachments: { attachment: DealAttachment; position: number }[];
-    }
-  >();
-
-  baseRows.forEach((row) => {
-    builders.set(row.dealId, {
-      base: row,
-      formations: [],
-      productContainers: new Map(),
-      trainingProducts: [],
-      extraProducts: [],
-      notes: [],
-      attachments: []
-    });
-  });
-
-  const formationRows = await db
-    .select({
-      dealId: dealFormations.dealId,
-      value: dealFormations.value,
-      position: dealFormations.position
-    })
-    .from(dealFormations)
-    .where(inArray(dealFormations.dealId, identifiers))
-    .orderBy(dealFormations.dealId, dealFormations.position, dealFormations.id);
-
-  formationRows.forEach((row: StoredFormationRow) => {
-    if (typeof row.dealId !== "number" || typeof row.value !== "string") {
-      return;
-    }
-
-    const builder = builders.get(row.dealId);
-    if (!builder) {
-      return;
-    }
-
-    builder.formations.push({ value: row.value, position: row.position ?? 0 });
-  });
-
-  const productRows = await db
-    .select({
-      dealId: dealProducts.dealId,
-      dealProductId: dealProducts.dealProductId,
-      productId: dealProducts.productId,
-      name: dealProducts.name,
-      code: dealProducts.code,
-      quantity: dealProducts.quantity,
-      itemPrice: dealProducts.itemPrice,
-      recommendedHours: dealProducts.recommendedHours,
-      recommendedHoursRaw: dealProducts.recommendedHoursRaw,
-      isTraining: dealProducts.isTraining,
-      position: dealProducts.position
-    })
-    .from(dealProducts)
-    .where(inArray(dealProducts.dealId, identifiers))
-    .orderBy(dealProducts.dealId, dealProducts.position, dealProducts.dealProductId);
-
-  productRows.forEach((row: StoredProductRow) => {
-    if (typeof row.dealId !== "number" || typeof row.dealProductId !== "number") {
-      return;
-    }
-
-    const builder = builders.get(row.dealId);
-    if (!builder) {
-      return;
-    }
-
-    const product: DealProduct = {
-      dealProductId: row.dealProductId,
-      productId: row.productId ?? null,
-      name: row.name ?? `Producto ${row.dealProductId}`,
-      code: row.code ?? null,
-      quantity: typeof row.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0,
-      itemPrice: row.itemPrice ?? null,
-      recommendedHours: row.recommendedHours ?? null,
-      recommendedHoursRaw: row.recommendedHoursRaw ?? null,
-      notes: [],
-      attachments: [],
-      isTraining: Boolean(row.isTraining)
-    };
-
-    const container = {
-      product,
-      position: row.position ?? 0,
-      noteEntries: [] as { note: DealNote; position: number }[],
-      attachmentEntries: [] as { attachment: DealAttachment; position: number }[]
-    };
-
-    builder.productContainers.set(row.dealProductId, container);
-
-    if (product.isTraining) {
-      builder.trainingProducts.push({ product, position: container.position });
-    } else {
-      builder.extraProducts.push({ product, position: container.position });
-    }
-  });
-
-  const noteRows = await db
-    .select({
-      noteId: dealNotes.noteId,
-      dealId: dealNotes.dealId,
-      content: dealNotes.content,
-      createdAtText: dealNotes.createdAtText,
-      authorName: dealNotes.authorName,
-      source: dealNotes.source,
-      productId: dealNotes.productId,
-      dealProductId: dealNotes.dealProductId,
-      position: dealNotes.position,
-      productPosition: dealNotes.productPosition
-    })
-    .from(dealNotes)
-    .where(inArray(dealNotes.dealId, identifiers))
-    .orderBy(dealNotes.dealId, dealNotes.position, dealNotes.noteId);
-
-  noteRows.forEach((row: StoredNoteRow) => {
-    if (typeof row.dealId !== "number" || typeof row.noteId !== "string" || typeof row.content !== "string") {
-      return;
-    }
-
-    const builder = builders.get(row.dealId);
-    if (!builder) {
-      return;
-    }
-
-    const note: DealNote = {
-      id: row.noteId,
-      content: row.content,
-      createdAt: row.createdAtText ?? null,
-      authorName: row.authorName ?? null,
-      source: row.source === "product" || row.source === "local" ? row.source : "deal",
-      productId: row.productId ?? null,
-      dealProductId: row.dealProductId ?? null
-    };
-
-    builder.notes.push({ note, position: row.position ?? 0 });
-
-    if (typeof row.dealProductId === "number") {
-      const container = builder.productContainers.get(row.dealProductId);
-      if (container) {
-        container.noteEntries.push({ note, position: row.productPosition ?? row.position ?? 0 });
       }
-    }
-  });
-
-  const attachmentRows = await db
-    .select({
-      attachmentId: dealAttachments.attachmentId,
-      dealId: dealAttachments.dealId,
-      name: dealAttachments.name,
-      url: dealAttachments.url,
-      downloadUrl: dealAttachments.downloadUrl,
-      fileType: dealAttachments.fileType,
-      addedAtText: dealAttachments.addedAtText,
-      addedBy: dealAttachments.addedBy,
-      source: dealAttachments.source,
-      productId: dealAttachments.productId,
-      dealProductId: dealAttachments.dealProductId,
-      position: dealAttachments.position,
-      productPosition: dealAttachments.productPosition
-    })
-    .from(dealAttachments)
-    .where(inArray(dealAttachments.dealId, identifiers))
-    .orderBy(dealAttachments.dealId, dealAttachments.position, dealAttachments.attachmentId);
-
-  attachmentRows.forEach((row: StoredAttachmentRow) => {
-    if (
-      typeof row.dealId !== "number" ||
-      typeof row.attachmentId !== "string" ||
-      typeof row.name !== "string" ||
-      typeof row.url !== "string"
-    ) {
-      return;
-    }
-
-    const builder = builders.get(row.dealId);
-    if (!builder) {
-      return;
-    }
-
-    const attachment: DealAttachment = {
-      id: row.attachmentId,
-      name: row.name,
-      url: row.url,
-      downloadUrl: row.downloadUrl ?? null,
-      fileType: row.fileType ?? null,
-      addedAt: row.addedAtText ?? null,
-      addedBy: row.addedBy ?? null,
-      source: row.source === "product" || row.source === "local" ? row.source : "deal",
-      productId: row.productId ?? null,
-      dealProductId: row.dealProductId ?? null
-    };
-
-    builder.attachments.push({ attachment, position: row.position ?? 0 });
-
-    if (typeof row.dealProductId === "number") {
-      const container = builder.productContainers.get(row.dealProductId);
-      if (container) {
-        container.attachmentEntries.push({ attachment, position: row.productPosition ?? row.position ?? 0 });
-      }
-    }
-  });
-
-  const results: DealRecord[] = [];
-
-  baseRows.forEach((row) => {
-    const builder = builders.get(row.dealId);
-    if (!builder) {
-      return;
-    }
-
-    const formations = builder.formations
-      .sort((a, b) => a.position - b.position)
-      .map((entry) => entry.value)
-      .filter((value): value is string => typeof value === "string");
-
-    builder.productContainers.forEach((container) => {
-      container.noteEntries.sort((a, b) => a.position - b.position);
-      container.product.notes = container.noteEntries.map((entry) => entry.note);
-
-      container.attachmentEntries.sort((a, b) => a.position - b.position);
-      container.product.attachments = container.attachmentEntries.map((entry) => entry.attachment);
     });
 
-    const trainingProducts = builder.trainingProducts
-      .sort((a, b) => a.position - b.position)
-      .map((entry) => entry.product);
+    const attachmentRows = await db
+      .select({
+        attachmentId: dealAttachments.attachmentId,
+        dealId: dealAttachments.dealId,
+        name: dealAttachments.name,
+        url: dealAttachments.url,
+        downloadUrl: dealAttachments.downloadUrl,
+        fileType: dealAttachments.fileType,
+        addedAtText: dealAttachments.addedAtText,
+        addedBy: dealAttachments.addedBy,
+        source: dealAttachments.source,
+        productId: dealAttachments.productId,
+        dealProductId: dealAttachments.dealProductId,
+        position: dealAttachments.position,
+        productPosition: dealAttachments.productPosition
+      })
+      .from(dealAttachments)
+      .where(inArray(dealAttachments.dealId, identifiers))
+      .orderBy(dealAttachments.dealId, dealAttachments.position, dealAttachments.attachmentId);
 
-    const extraProducts = builder.extraProducts
-      .sort((a, b) => a.position - b.position)
-      .map((entry) => entry.product);
+    attachmentRows.forEach((row: StoredAttachmentRow) => {
+      if (
+        typeof row.dealId !== "number" ||
+        typeof row.attachmentId !== "string" ||
+        typeof row.name !== "string" ||
+        typeof row.url !== "string"
+      ) {
+        return;
+      }
 
-    const notes = builder.notes
-      .sort((a, b) => a.position - b.position)
-      .map((entry) => entry.note);
+      const builder = builders.get(row.dealId);
+      if (!builder) {
+        return;
+      }
 
-    const attachments = builder.attachments
-      .sort((a, b) => a.position - b.position)
-      .map((entry) => entry.attachment);
+      const attachment: DealAttachment = {
+        id: row.attachmentId,
+        name: row.name,
+        url: row.url,
+        downloadUrl: row.downloadUrl ?? null,
+        fileType: row.fileType ?? null,
+        addedAt: row.addedAtText ?? null,
+        addedBy: row.addedBy ?? null,
+        source: row.source === "product" || row.source === "local" ? row.source : "deal",
+        productId: row.productId ?? null,
+        dealProductId: row.dealProductId ?? null
+      };
 
-    const record: DealRecord = {
-      id: row.dealId,
-      title: row.title,
-      clientId: row.clientId ?? null,
-      clientName: row.clientName ?? null,
-      sede: row.sede ?? null,
-      address: row.address ?? null,
-      caes: row.caes ?? null,
-      fundae: row.fundae ?? null,
-      hotelPernocta: row.hotelPernocta ?? null,
-      pipelineId: row.pipelineId ?? null,
-      pipelineName: row.pipelineName ?? null,
-      wonDate: row.wonDate ?? null,
-      formations,
-      trainingProducts,
-      extraProducts,
-      notes,
-      attachments
-    };
+      builder.attachments.push({ attachment, position: row.position ?? 0 });
 
-    storeDealInCache(record, row.updatedAt);
-    results.push(record);
-  });
+      if (typeof row.dealProductId === "number") {
+        const container = builder.productContainers.get(row.dealProductId);
+        if (container) {
+          container.attachmentEntries.push({ attachment, position: row.productPosition ?? row.position ?? 0 });
+        }
+      }
+    });
 
-  return results;
+    const results: DealRecord[] = [];
+
+    baseRows.forEach((row) => {
+      const builder = builders.get(row.dealId);
+      if (!builder) {
+        return;
+      }
+
+      const formations = builder.formations
+        .sort((a, b) => a.position - b.position)
+        .map((entry) => entry.value)
+        .filter((value): value is string => typeof value === "string");
+
+      builder.productContainers.forEach((container) => {
+        container.noteEntries.sort((a, b) => a.position - b.position);
+        container.product.notes = container.noteEntries.map((entry) => entry.note);
+
+        container.attachmentEntries.sort((a, b) => a.position - b.position);
+        container.product.attachments = container.attachmentEntries.map((entry) => entry.attachment);
+      });
+
+      const trainingProducts = builder.trainingProducts
+        .sort((a, b) => a.position - b.position)
+        .map((entry) => entry.product);
+
+      const extraProducts = builder.extraProducts
+        .sort((a, b) => a.position - b.position)
+        .map((entry) => entry.product);
+
+      const notes = builder.notes
+        .sort((a, b) => a.position - b.position)
+        .map((entry) => entry.note);
+
+      const attachments = builder.attachments
+        .sort((a, b) => a.position - b.position)
+        .map((entry) => entry.attachment);
+
+      const record: DealRecord = {
+        id: row.dealId,
+        title: row.title,
+        clientId: row.clientId ?? null,
+        clientName: row.clientName ?? null,
+        sede: row.sede ?? null,
+        address: row.address ?? null,
+        caes: row.caes ?? null,
+        fundae: row.fundae ?? null,
+        hotelPernocta: row.hotelPernocta ?? null,
+        pipelineId: row.pipelineId ?? null,
+        pipelineName: row.pipelineName ?? null,
+        wonDate: row.wonDate ?? null,
+        formations,
+        trainingProducts,
+        extraProducts,
+        notes,
+        attachments
+      };
+
+      results.push(record);
+    });
+
+    return results;
+  } catch (error) {
+    const message = "No se pudieron leer los presupuestos desde la base de datos.";
+    console.error(message, error);
+    throw new DatabaseError(message);
+  }
 };
-
 const readStoredDeal = async (dealId: number): Promise<DealRecord | null> => {
   if (!Number.isFinite(dealId)) {
     return null;
   }
 
-  const storedInMemory = inMemoryDeals.get(dealId);
-  if (!db) {
-    return storedInMemory ? storedInMemory.deal : null;
-  }
-
   try {
     const [deal] = await loadDealsFromDatabase({ dealIds: [dealId] });
-    return deal ?? (storedInMemory ? storedInMemory.deal : null);
+    return deal ?? null;
   } catch (error) {
-    console.error(`No se pudo leer el deal ${dealId} desde la base de datos`, error);
-    return storedInMemory ? storedInMemory.deal : null;
+    if (error instanceof DatabaseError) {
+      throw error;
+    }
+
+    const message = `No se pudo leer el presupuesto ${dealId} desde la base de datos.`;
+    console.error(message, error);
+    throw new DatabaseError(message);
   }
 };
 
 const listStoredDeals = async (): Promise<DealRecord[]> => {
-  if (!db) {
-    return readDealsFromMemory();
-  }
-
   try {
-    const loaded = await loadDealsFromDatabase();
-    return loaded.length > 0 ? loaded : readDealsFromMemory();
+    return await loadDealsFromDatabase();
   } catch (error) {
-    console.error("No se pudo leer la lista de deals almacenados", error);
-    return readDealsFromMemory();
+    if (error instanceof DatabaseError) {
+      throw error;
+    }
+
+    const message = "No se pudo leer la lista de presupuestos desde la base de datos.";
+    console.error(message, error);
+    throw new DatabaseError(message);
   }
 };
 
 const saveDealRecord = async (deal: DealRecord): Promise<void> => {
-  const now = new Date();
-  storeDealInCache(deal, now);
-
   if (!db) {
-    return;
+    const message = "No hay conexión con la base de datos; no se pudo guardar el presupuesto.";
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   const ensured = await ensureDealStorageTables();
   if (!ensured) {
-    return;
+    const message = "No se pudieron preparar las tablas de presupuestos en la base de datos.";
+    console.error(message);
+    throw new DatabaseError(message);
   }
+
+  const now = new Date();
 
   const productNotePositions = new Map<string, number>();
   const productAttachmentPositions = new Map<string, number>();
@@ -1121,7 +1111,9 @@ const saveDealRecord = async (deal: DealRecord): Promise<void> => {
       }
     });
   } catch (error) {
-    console.error(`No se pudo guardar el deal ${deal.id} en la base de datos`, error);
+    const message = `No se pudo guardar el presupuesto ${deal.id} en la base de datos.`;
+    console.error(message, error);
+    throw new DatabaseError(message);
   }
 };
 
@@ -1188,17 +1180,19 @@ const removeDealReferencesFromSharedState = async (dealId: number): Promise<void
 };
 
 const deleteStoredDeal = async (dealId: number): Promise<boolean> => {
-  const removedFromMemory = inMemoryDeals.delete(dealId);
-
   await removeDealReferencesFromSharedState(dealId);
 
   if (!db) {
-    return removedFromMemory;
+    const message = "No hay conexión con la base de datos; no se pudo eliminar el presupuesto.";
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   const ensured = await ensureDealStorageTables();
   if (!ensured) {
-    return removedFromMemory;
+    const message = "No se pudieron preparar las tablas de presupuestos en la base de datos.";
+    console.error(message);
+    throw new DatabaseError(message);
   }
 
   try {
@@ -1207,10 +1201,11 @@ const deleteStoredDeal = async (dealId: number): Promise<boolean> => {
       .where(eq(deals.dealId, dealId))
       .returning({ dealId: deals.dealId });
 
-    return result.length > 0 || removedFromMemory;
+    return result.length > 0;
   } catch (error) {
-    console.error(`No se pudo eliminar el deal ${dealId} de la base de datos`, error);
-    return removedFromMemory;
+    const message = `No se pudo eliminar el presupuesto ${dealId} de la base de datos.`;
+    console.error(message, error);
+    throw new DatabaseError(message);
   }
 };
 
@@ -3223,7 +3218,21 @@ app.get("/deals", async (c) => {
       return c.json({ deal: null, message: "El identificador de presupuesto no es válido." }, 400);
     }
 
-    const storedDeal = await readStoredDeal(dealId);
+    let storedDeal: DealRecord | null = null;
+
+    try {
+      storedDeal = await readStoredDeal(dealId);
+    } catch (error) {
+      if (error instanceof DatabaseError) {
+        return c.json({ deal: null, message: error.message }, 503);
+      }
+
+      console.error(`No se pudo leer el presupuesto ${dealId} almacenado`, error);
+      return c.json(
+        { deal: null, message: "No se pudo acceder a la información almacenada del presupuesto." },
+        500
+      );
+    }
 
     if (!forceRefresh && storedDeal) {
       return c.json({ deal: storedDeal, refreshed: false });
@@ -3233,7 +3242,34 @@ app.get("/deals", async (c) => {
       const rawDeal = await getDealById(dealId);
 
       if (!rawDeal) {
-        await deleteStoredDeal(dealId);
+        try {
+          await deleteStoredDeal(dealId);
+        } catch (error) {
+          if (error instanceof DatabaseError) {
+            return c.json(
+              {
+                deal: storedDeal,
+                refreshed: false,
+                message: error.message
+              },
+              503
+            );
+          }
+
+          console.error(
+            `No se pudo eliminar el presupuesto ${dealId} tras no encontrarlo en Pipedrive`,
+            error
+          );
+          return c.json(
+            {
+              deal: storedDeal,
+              refreshed: false,
+              message: "No se pudo eliminar el presupuesto ausente en la base de datos."
+            },
+            500
+          );
+        }
+
         return c.json(
           { deal: null, message: "No se encontró el presupuesto solicitado." },
           404
@@ -3260,13 +3296,25 @@ app.get("/deals", async (c) => {
       await saveDealRecord(deal);
       return c.json({ deal, refreshed: true });
     } catch (error) {
+      if (error instanceof DatabaseError) {
+        return c.json(
+          {
+            deal: storedDeal,
+            refreshed: false,
+            message: error.message
+          },
+          503
+        );
+      }
+
       console.error(`Error al consultar el deal ${dealId} en Pipedrive`, error);
 
       if (storedDeal) {
         return c.json({
           deal: storedDeal,
           refreshed: false,
-          message: "Se devolvió la versión almacenada del presupuesto porque no se pudo actualizar desde Pipedrive."
+          message:
+            "Se devolvió la versión almacenada del presupuesto porque no se pudo actualizar desde Pipedrive."
         });
       }
 
@@ -3277,11 +3325,40 @@ app.get("/deals", async (c) => {
     }
   }
 
-  let deals = await listStoredDeals();
+  let deals: DealRecord[];
+  try {
+    deals = await listStoredDeals();
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 503);
+    }
+
+    console.error("No se pudo obtener el listado de presupuestos almacenados", error);
+    return c.json(
+      { deals: [], page: 1, limit: 0, message: "No se pudo obtener el listado de presupuestos." },
+      500
+    );
+  }
 
   if (forceRefresh) {
     await synchronizeDealsFromPipedrive({ force: true, knownDeals: deals });
-    deals = await listStoredDeals();
+
+    try {
+      deals = await listStoredDeals();
+    } catch (error) {
+      if (error instanceof DatabaseError) {
+        return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 503);
+      }
+
+      console.error(
+        "No se pudo actualizar el listado de presupuestos tras la sincronización",
+        error
+      );
+      return c.json(
+        { deals: [], page: 1, limit: 0, message: "No se pudo actualizar el listado de presupuestos." },
+        500
+      );
+    }
   }
 
   return c.json({ deals, page: 1, limit: deals.length });
@@ -3304,7 +3381,17 @@ app.put("/deals", async (c) => {
     return c.json({ ok: false, message: "Los datos del presupuesto no son válidos." }, 400);
   }
 
-  await saveDealRecord(deal);
+  try {
+    await saveDealRecord(deal);
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ ok: false, message: error.message }, 503);
+    }
+
+    console.error("No se pudo guardar el presupuesto en la base de datos", error);
+    return c.json({ ok: false, message: "No se pudo guardar el presupuesto." }, 500);
+  }
+
   return c.json({ ok: true, deal, updatedAt: new Date().toISOString() });
 });
 
@@ -3322,8 +3409,29 @@ app.delete("/deals", async (c) => {
     return c.json({ ok: false, message: "El identificador del presupuesto no es válido." }, 400);
   }
 
-  const existingDeal = await readStoredDeal(dealId);
-  const removed = await deleteStoredDeal(dealId);
+  let existingDeal: DealRecord | null = null;
+  try {
+    existingDeal = await readStoredDeal(dealId);
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ ok: false, message: error.message }, 503);
+    }
+
+    console.error(`No se pudo consultar el presupuesto ${dealId} antes de eliminarlo`, error);
+    return c.json({ ok: false, message: "No se pudo consultar el presupuesto indicado." }, 500);
+  }
+
+  let removed: boolean;
+  try {
+    removed = await deleteStoredDeal(dealId);
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return c.json({ ok: false, message: error.message }, 503);
+    }
+
+    console.error(`No se pudo eliminar el presupuesto ${dealId}`, error);
+    return c.json({ ok: false, message: "No se pudo eliminar el presupuesto." }, 500);
+  }
 
   if (!removed && !existingDeal) {
     return c.json({ ok: false, message: "No se encontró el presupuesto indicado." }, 404);
