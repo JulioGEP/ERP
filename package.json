@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:ts": "tsc --project tsconfig.sync.json",
+    "sync:deal": "pnpm run build:ts && node dist/src/sync/index.js",
+    "lint": "eslint --ext .ts src/sync",
+    "format": "eslint --ext .ts src/sync --fix",
+    "test": "pnpm run build:ts && node --test dist/src/sync/__tests__/mappings.test.js"
   },
   "dependencies": {
     "@fullcalendar/daygrid": "^6.1.15",
@@ -20,6 +25,7 @@
     "bootstrap": "^5.3.3",
     "drizzle-orm": "^0.44.5",
     "hono": "^4.9.8",
+    "pg": "^8.12.0",
     "react": "^18.3.1",
     "react-bootstrap": "^2.10.4",
     "react-dom": "^18.3.1"
