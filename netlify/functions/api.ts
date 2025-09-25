@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import {
   dealAttachments,
   dealFormations,
@@ -76,6 +76,11 @@ type DealRecord = {
   attachments: DealAttachment[];
 };
 
+const PIPELINE_NAME: Record<string | number, string> = {
+  1: "Formación",
+  2: "Consultoría"
+};
+
 type RelatedEntity = {
   id: number | null;
   name: string | null;
@@ -129,6 +134,14 @@ const inMemorySharedState = new Map<string, SharedStateEntry>();
 let sharedStateTablePromise: Promise<void> | null = null;
 let pipedriveIndexPromise: Promise<void> | null = null;
 
+const PIPEDRIVE_INDEX_QUERIES = [
+  "create unique index if not exists organizations_pipedrive_id_key on organizations(pipedrive_id)",
+  "create unique index if not exists persons_pipedrive_id_key on persons(pipedrive_id)",
+  "create unique index if not exists deals_pipedrive_id_key on deals(pipedrive_id)",
+  "create unique index if not exists notes_pipedrive_id_key on notes(pipedrive_id)",
+  "create unique index if not exists documents_pipedrive_id_key on documents(pipedrive_id)"
+];
+
 const ensurePipedriveIndexes = async (): Promise<void> => {
   if (!db) {
     return;
@@ -136,17 +149,22 @@ const ensurePipedriveIndexes = async (): Promise<void> => {
 
   if (!pipedriveIndexPromise) {
     pipedriveIndexPromise = (async () => {
-      try {
-        await db.execute(sql`
-          create unique index if not exists organizations_pipedrive_id_key on organizations(pipedrive_id);
-          create unique index if not exists persons_pipedrive_id_key on persons(pipedrive_id);
-          create unique index if not exists deals_pipedrive_id_key on deals(pipedrive_id);
-          create unique index if not exists notes_pipedrive_id_key on notes(pipedrive_id);
-          create unique index if not exists documents_pipedrive_id_key on documents(pipedrive_id);
-        `);
-      } catch (error) {
-        console.error("No se pudieron asegurar los índices únicos para pipedrive_id", error);
-        throw error;
+      for (const statement of PIPEDRIVE_INDEX_QUERIES) {
+        try {
+          await db.execute(sql.raw(statement));
+        } catch (error) {
+          const message =
+            typeof (error as { message?: unknown })?.message === "string"
+              ? ((error as { message?: unknown }).message as string)
+              : "";
+          if (!message.toLowerCase().includes("already exists")) {
+            console.error("No se pudieron asegurar los índices únicos para pipedrive_id", {
+              statement,
+              error
+            });
+            throw error;
+          }
+        }
       }
     })();
   }
@@ -583,29 +601,102 @@ const loadDealsFromDatabase = async (
   const { dealIds } = options;
 
   try {
-    let baseQuery = db
-      .select({
-        dealId: deals.id,
-        title: deals.title,
-        clientId: deals.clientId,
-        clientName: deals.clientName,
-        sede: deals.sede,
-        address: deals.address,
-        caes: deals.caes,
-        fundae: deals.fundae,
-        hotelPernocta: deals.hotelPernocta,
-        pipelineId: deals.pipelineId,
-        pipelineName: deals.pipelineName,
-        wonDate: deals.wonDate,
-        updatedAt: deals.updatedAt
-      })
-      .from(deals);
+    const filterClause = dealIds && dealIds.length > 0
+      ? sql`where d.id in (${sql.join(dealIds.map((id) => sql`${id}`), sql`, `)})`
+      : sql``;
 
-    if (dealIds && dealIds.length > 0) {
-      baseQuery = baseQuery.where(inArray(deals.id, dealIds));
-    }
+    const baseResult = await db.execute(sql`
+      select
+        d.id,
+        d.pipedrive_id,
+        d.org_id as client_id,
+        o.name as client_name,
+        d.site as sede,
+        d.deal_direction as address,
+        d.caes,
+        d.fundae,
+        d.hotel_night as hotel_pernocta,
+        d.pipeline_id,
+        d.training,
+        d.prod_extra,
+        d.hours,
+        d.status,
+        d.updated_at
+      from deals d
+      left join organizations o on o.id = d.org_id
+      ${filterClause}
+      order by d.updated_at desc, d.id desc
+    `);
 
-    const baseRows = await baseQuery.orderBy(desc(deals.updatedAt), desc(deals.id));
+    const baseRows: StoredDealRow[] = [];
+
+    const parseNumeric = (value: unknown): number | null => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+
+      if (typeof value === "string" && value.trim().length > 0) {
+        const parsed = Number.parseInt(value, 10);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+
+      if (typeof value === "bigint") {
+        return Number(value);
+      }
+
+      return null;
+    };
+
+    const parseString = (value: unknown): string | null => {
+      if (typeof value !== "string") {
+        return null;
+      }
+
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
+    const parseDate = (value: unknown): Date | null => {
+      if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value;
+      }
+
+      if (typeof value === "string") {
+        const timestamp = Date.parse(value);
+        return Number.isNaN(timestamp) ? null : new Date(timestamp);
+      }
+
+      return null;
+    };
+
+    (baseResult.rows as Record<string, unknown>[]).forEach((row) => {
+
+      const dealId = parseNumeric(row.id);
+      if (dealId === null) {
+        return;
+      }
+      const pipelineId = parseNumeric(row.pipeline_id);
+      const titleRaw = row.title;
+
+      baseRows.push({
+        dealId,
+        title:
+          typeof titleRaw === "string" && titleRaw.trim().length > 0
+            ? titleRaw
+            : `Presupuesto #${dealId}`,
+        clientId: parseNumeric(row.client_id),
+        clientName: parseString(row.client_name),
+        sede: parseString(row.sede),
+        address: parseString(row.address),
+        caes: parseString(row.caes),
+        fundae: parseString(row.fundae),
+        hotelPernocta: parseString(row.hotel_pernocta),
+        pipelineId,
+        pipelineName: pipelineId !== null ? PIPELINE_NAME[pipelineId] ?? null : null,
+        wonDate: null,
+        updatedAt: parseDate(row.updated_at)
+      });
+    });
 
     if (baseRows.length === 0) {
       return [];
@@ -3535,7 +3626,10 @@ export const handler: Handler = async (event) => {
     const body = await res.text();
     return { statusCode: res.status, headers, body };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error interno del servidor";
+    const message =
+      error instanceof Error && typeof error.message === "string" && error.message.trim().length > 0
+        ? error.message
+        : "Internal error";
     const code = (error as { code?: unknown })?.code;
     const detail = (error as { detail?: unknown })?.detail;
 
@@ -3544,7 +3638,7 @@ export const handler: Handler = async (event) => {
     return {
       statusCode: 500,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error: message })
+      body: JSON.stringify({ error: "DB_ERROR", message })
     };
   }
 };
