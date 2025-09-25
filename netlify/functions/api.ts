@@ -222,6 +222,11 @@ const createDatabaseClient = () => {
 
 const db = createDatabaseClient();
 
+function requireDb() {
+  if (!db) throw new Error("DATABASE_URL missing – DB required");
+  return db;
+}
+
 const SHARED_STATE_PERSISTENCE_ENABLED = (() => {
   const flag = process.env.ENABLE_SHARED_STATE_PERSISTENCE ?? process.env.SYNC_SHARED_STATE_TO_DATABASE;
 
@@ -3494,6 +3499,28 @@ app.get("/deals", async (c) => {
   const refreshParam = url.searchParams.get("refresh");
   const forceRefresh = parseBooleanFlag(refreshParam);
 
+  const missingDbMessage = (() => {
+    try {
+      requireDb();
+      return null;
+    } catch (error) {
+      const message =
+        error instanceof Error && typeof error.message === "string" && error.message.trim().length > 0
+          ? error.message
+          : "DATABASE_URL missing – DB required";
+      console.error("No se pudo acceder a la base de datos para la ruta /deals", error);
+      return message;
+    }
+  })();
+
+  if (missingDbMessage) {
+    if (dealIdParam) {
+      return c.json({ deal: null, message: missingDbMessage }, 500);
+    }
+
+    return c.json({ deals: [], page: 1, limit: 0, message: missingDbMessage }, 500);
+  }
+
   if (dealIdParam) {
     const dealId = Number.parseInt(dealIdParam, 10);
 
@@ -3650,8 +3677,14 @@ app.put("/deals", async (c) => {
   }
 
   try {
+    requireDb();
     await saveDealRecord(deal);
   } catch (error) {
+    if (error instanceof Error && error.message === "DATABASE_URL missing – DB required") {
+      console.error("No se pudo acceder a la base de datos para guardar el presupuesto", error);
+      return c.json({ ok: false, message: error.message }, 500);
+    }
+
     if (error instanceof DatabaseError) {
       return c.json({ ok: false, message: error.message }, 500);
     }
@@ -3675,6 +3708,17 @@ app.delete("/deals", async (c) => {
 
   if (!Number.isFinite(dealId)) {
     return c.json({ ok: false, message: "El identificador del presupuesto no es válido." }, 400);
+  }
+
+  try {
+    requireDb();
+  } catch (error) {
+    const message =
+      error instanceof Error && typeof error.message === "string" && error.message.trim().length > 0
+        ? error.message
+        : "DATABASE_URL missing – DB required";
+    console.error("No se pudo acceder a la base de datos para eliminar el presupuesto", error);
+    return c.json({ ok: false, message }, 500);
   }
 
   let existingDeal: DealRecord | null = null;
