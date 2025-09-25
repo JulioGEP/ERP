@@ -108,6 +108,9 @@ const PIPELINE_NAME: Record<string | number, string> = {
   2: "Consultoría"
 };
 
+const FEATURE_CREATE_DEAL_TABLES =
+  (process.env.FEATURE_CREATE_DEAL_TABLES ?? "").toLowerCase() === "true";
+
 type ListedDealRow = {
   id: unknown;
   pipedrive_id: unknown;
@@ -426,6 +429,10 @@ const verifyDealStorageTables = async (): Promise<boolean> => {
 const ensureDealStorageTables = async (): Promise<boolean> => {
   if (!db) {
     return false;
+  }
+
+  if (!FEATURE_CREATE_DEAL_TABLES) {
+    return true;
   }
 
   if (!dealStorageSetupPromise) {
@@ -1112,6 +1119,13 @@ const saveDealRecord = async (deal: DealRecord): Promise<void> => {
     const message = "No hay conexión con la base de datos; no se pudo guardar el presupuesto.";
     console.error(message);
     throw new DatabaseError(message);
+  }
+
+  if (!FEATURE_CREATE_DEAL_TABLES) {
+    console.info(
+      "[saveDealRecord] FEATURE_CREATE_DEAL_TABLES=false → no se escriben tablas auxiliares"
+    );
+    return;
   }
 
   const ensured = await ensureDealStorageTables();
