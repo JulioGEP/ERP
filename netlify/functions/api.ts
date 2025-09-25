@@ -1641,7 +1641,7 @@ const parsePipedriveAttachments = (
 
     const resolvedDealId = resolveDealIdFromRecord(record);
     if (resolvedDealId === null) {
-      return true;
+      return false;
     }
 
     return resolvedDealId === expectedDealId;
