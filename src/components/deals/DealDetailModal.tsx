@@ -342,6 +342,26 @@ const sanitizeSelectionList = (values: string[]): string[] =>
 
 const normalizeSelectionValue = (value: string): string => value.trim();
 
+type YesNoValue = '' | 'si' | 'no';
+
+const normalizeYesNoValue = (value: string | null | undefined): YesNoValue => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const trimmed = value.trim().toLocaleLowerCase('es');
+
+  if (trimmed === 'si' || trimmed === 'sí') {
+    return 'si';
+  }
+
+  if (trimmed === 'no') {
+    return 'no';
+  }
+
+  return '';
+};
+
 const sanitizeOptionalDealText = (value: string | null | undefined): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -585,9 +605,9 @@ const updateSelectionSlot = (items: string[], index: number, value: string): str
 
 const createScheduleSnapshot = (
   sessions: SessionFormEntry[],
-  caes: string,
-  fundae: string,
-  hotelPernocta: string
+  caes: YesNoValue,
+  fundae: YesNoValue,
+  hotelPernocta: YesNoValue
 ) => {
   const normalizedSessions = sessions.map((session) => ({
     key: session.key,
@@ -868,15 +888,17 @@ const DealDetailModal = ({
     initialRecommendedHoursByProduct
   );
   const [generalAddress, setGeneralAddress] = useState(deal.address ?? '');
-  const [caesValue, setCaesValue] = useState(deal.caes ?? '');
-  const [fundaeValue, setFundaeValue] = useState(deal.fundae ?? '');
-  const [hotelPernoctaValue, setHotelPernoctaValue] = useState(deal.hotelPernocta ?? '');
+  const [caesValue, setCaesValue] = useState<YesNoValue>(normalizeYesNoValue(deal.caes));
+  const [fundaeValue, setFundaeValue] = useState<YesNoValue>(normalizeYesNoValue(deal.fundae));
+  const [hotelPernoctaValue, setHotelPernoctaValue] = useState<YesNoValue>(
+    normalizeYesNoValue(deal.hotelPernocta)
+  );
   const [scheduleBaseline, setScheduleBaseline] = useState(() =>
     createScheduleSnapshot(
       initialSessions,
-      deal.caes ?? '',
-      deal.fundae ?? '',
-      deal.hotelPernocta ?? ''
+      normalizeYesNoValue(deal.caes),
+      normalizeYesNoValue(deal.fundae),
+      normalizeYesNoValue(deal.hotelPernocta)
     )
   );
   const currentScheduleSnapshot = useMemo(
@@ -928,19 +950,19 @@ const DealDetailModal = ({
 
   useEffect(() => {
     if (show) {
-      setCaesValue(deal.caes ?? '');
+      setCaesValue(normalizeYesNoValue(deal.caes));
     }
   }, [deal.caes, show]);
 
   useEffect(() => {
     if (show) {
-      setFundaeValue(deal.fundae ?? '');
+      setFundaeValue(normalizeYesNoValue(deal.fundae));
     }
   }, [deal.fundae, show]);
 
   useEffect(() => {
     if (show) {
-      setHotelPernoctaValue(deal.hotelPernocta ?? '');
+      setHotelPernoctaValue(normalizeYesNoValue(deal.hotelPernocta));
     }
   }, [deal.hotelPernocta, show]);
 
@@ -949,9 +971,9 @@ const DealDetailModal = ({
       setScheduleBaseline(
         createScheduleSnapshot(
           initialSessions,
-          deal.caes ?? '',
-          deal.fundae ?? '',
-          deal.hotelPernocta ?? ''
+          normalizeYesNoValue(deal.caes),
+          normalizeYesNoValue(deal.fundae),
+          normalizeYesNoValue(deal.hotelPernocta)
         )
       );
     }
@@ -1311,9 +1333,9 @@ const DealDetailModal = ({
 
     const eventsToSave: CalendarEvent[] = [];
     const sanitizedClientName = sanitizeOptionalDealText(deal.clientName);
-    const sanitizedFundae = sanitizeOptionalDealText(deal.fundae);
-    const sanitizedCaes = sanitizeOptionalDealText(deal.caes);
-    const sanitizedHotelPernocta = sanitizeOptionalDealText(deal.hotelPernocta);
+    const sanitizedFundae = sanitizeOptionalDealText(fundaeValue);
+    const sanitizedCaes = sanitizeOptionalDealText(caesValue);
+    const sanitizedHotelPernocta = sanitizeOptionalDealText(hotelPernoctaValue);
     const sanitizedFormations = sanitizeSelectionList(formationLabels);
 
     for (const session of sessions) {
@@ -1793,31 +1815,54 @@ const DealDetailModal = ({
                       <Col lg={3} md={6}>
                         <Form.Group controlId="general-caes">
                           <Form.Label>CAES</Form.Label>
-                          <Form.Control
-                            type="text"
+                          <Form.Select
                             value={caesValue}
-                            onChange={(event) => setCaesValue(event.target.value)}
-                          />
+                            onChange={(event) => setCaesValue(event.target.value as YesNoValue)}
+                          >
+                            {caesValue === '' ? (
+                              <option value="" disabled hidden>
+                                Selecciona una opción
+                              </option>
+                            ) : null}
+                            <option value="si">Sí</option>
+                            <option value="no">No</option>
+                          </Form.Select>
                         </Form.Group>
                       </Col>
                       <Col lg={3} md={6}>
                         <Form.Group controlId="general-fundae">
                           <Form.Label>FUNDAE</Form.Label>
-                          <Form.Control
-                            type="text"
+                          <Form.Select
                             value={fundaeValue}
-                            onChange={(event) => setFundaeValue(event.target.value)}
-                          />
+                            onChange={(event) => setFundaeValue(event.target.value as YesNoValue)}
+                          >
+                            {fundaeValue === '' ? (
+                              <option value="" disabled hidden>
+                                Selecciona una opción
+                              </option>
+                            ) : null}
+                            <option value="si">Sí</option>
+                            <option value="no">No</option>
+                          </Form.Select>
                         </Form.Group>
                       </Col>
                       <Col lg={3} md={6}>
                         <Form.Group controlId="general-hotel-pernocta">
                           <Form.Label>Hotel y Pernocta</Form.Label>
-                          <Form.Control
-                            type="text"
+                          <Form.Select
                             value={hotelPernoctaValue}
-                            onChange={(event) => setHotelPernoctaValue(event.target.value)}
-                          />
+                            onChange={(event) =>
+                              setHotelPernoctaValue(event.target.value as YesNoValue)
+                            }
+                          >
+                            {hotelPernoctaValue === '' ? (
+                              <option value="" disabled hidden>
+                                Selecciona una opción
+                              </option>
+                            ) : null}
+                            <option value="si">Sí</option>
+                            <option value="no">No</option>
+                          </Form.Select>
                         </Form.Group>
                       </Col>
                       <Col lg={3} md={6}>
