@@ -231,7 +231,7 @@ const verifyDealStorageTables = async (): Promise<boolean> => {
   }
 
   const checks: Array<{ name: string; verify: () => Promise<unknown> }> = [
-    { name: "deals", verify: () => db.select({ id: deals.dealId }).from(deals).limit(1) },
+    { name: "deals", verify: () => db.select({ id: deals.id }).from(deals).limit(1) },
     {
       name: "deal_formations",
       verify: () => db.select({ id: dealFormations.id }).from(dealFormations).limit(1)
@@ -272,7 +272,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
       try {
         await db.execute(sql`
           create table if not exists deals (
-            deal_id integer primary key,
+            id serial primary key,
             title text not null,
             client_id integer,
             client_name text,
@@ -292,7 +292,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
         await db.execute(sql`
           create table if not exists deal_formations (
             id serial primary key,
-            deal_id integer references deals(deal_id) on delete cascade,
+            deal_id integer references deals(id) on delete cascade,
             value text not null,
             position integer not null default 0,
             created_at timestamptz default now() not null
@@ -302,7 +302,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
         await db.execute(sql`
           create table if not exists deal_products (
             deal_product_id integer primary key,
-            deal_id integer references deals(deal_id) on delete cascade,
+            deal_id integer references deals(id) on delete cascade,
             product_id integer,
             name text not null,
             code text,
@@ -320,7 +320,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
         await db.execute(sql`
           create table if not exists deal_notes (
             note_id varchar(255) primary key,
-            deal_id integer references deals(deal_id) on delete cascade,
+            deal_id integer references deals(id) on delete cascade,
             content text not null,
             created_at_text text,
             author_name text,
@@ -336,7 +336,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
         await db.execute(sql`
           create table if not exists deal_attachments (
             attachment_id varchar(255) primary key,
-            deal_id integer references deals(deal_id) on delete cascade,
+            deal_id integer references deals(id) on delete cascade,
             name text not null,
             url text not null,
             download_url text,
@@ -548,7 +548,7 @@ const loadDealsFromDatabase = async (
   try {
     let baseQuery = db
       .select({
-        dealId: deals.dealId,
+        dealId: deals.id,
         title: deals.title,
         clientId: deals.clientId,
         clientName: deals.clientName,
@@ -565,10 +565,10 @@ const loadDealsFromDatabase = async (
       .from(deals);
 
     if (dealIds && dealIds.length > 0) {
-      baseQuery = baseQuery.where(inArray(deals.dealId, dealIds));
+      baseQuery = baseQuery.where(inArray(deals.id, dealIds));
     }
 
-    const baseRows = await baseQuery.orderBy(desc(deals.updatedAt), desc(deals.dealId));
+    const baseRows = await baseQuery.orderBy(desc(deals.updatedAt), desc(deals.id));
 
     if (baseRows.length === 0) {
       return [];
@@ -999,7 +999,7 @@ const saveDealRecord = async (deal: DealRecord): Promise<void> => {
       await tx
         .insert(deals)
         .values({
-          dealId: deal.id,
+          id: deal.id,
           title: deal.title,
           clientId: deal.clientId ?? null,
           clientName: deal.clientName ?? null,
@@ -1014,7 +1014,7 @@ const saveDealRecord = async (deal: DealRecord): Promise<void> => {
           updatedAt: now
         })
         .onConflictDoUpdate({
-          target: deals.dealId,
+          target: deals.id,
           set: {
             title: deal.title,
             clientId: deal.clientId ?? null,
@@ -1242,8 +1242,8 @@ const deleteStoredDeal = async (dealId: number): Promise<boolean> => {
   try {
     const result = await db
       .delete(deals)
-      .where(eq(deals.dealId, dealId))
-      .returning({ dealId: deals.dealId });
+      .where(eq(deals.id, dealId))
+      .returning({ dealId: deals.id });
 
     return result.length > 0;
   } catch (error) {
