@@ -1,3 +1,30 @@
+// --- BEGIN: Index setup guard ---
+const SHOULD_SETUP_INDEXES =
+  (process.env.ENABLE_DB_INDEX_SETUP ?? "").toLowerCase() === "true";
+
+async function setupPipedriveIndexesIfEnabled(db: ReturnType<typeof drizzle> | null) {
+  if (!db || !SHOULD_SETUP_INDEXES) return;
+  const statements = [
+    "create unique index if not exists organizations_pipedrive_id_key on organizations(pipedrive_id)",
+    "create unique index if not exists persons_pipedrive_id_key on persons(pipedrive_id)",
+    "create unique index if not exists deals_pipedrive_id_key on deals(pipedrive_id)",
+    "create unique index if not exists notes_pipedrive_id_key on notes(pipedrive_id)",
+    "create unique index if not exists documents_pipedrive_id_key on documents(pipedrive_id)"
+  ];
+  for (const s of statements) {
+    try {
+      await db.execute(sql.raw(s));
+    } catch (err) {
+      const msg = (err as any)?.message ?? "";
+      if (typeof msg === "string" && msg.toLowerCase().includes("already exists")) {
+        console.info("Índice ya existe:", s);
+      } else {
+        console.error("Error creando índice:", s, err);
+      }
+    }
+  }
+}
+// --- END: Index setup guard ---
 import type { Handler } from "@netlify/functions";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -177,10 +204,10 @@ const ensurePipedriveIndexes = async (): Promise<void> => {
   }
 };
 
-if (db) {
-  ensurePipedriveIndexes().catch((error) => {
-    console.error("No se pudieron preparar los índices de pipedrive_id", error);
-  });
+iif (db) {
+  setupPipedriveIndexesIfEnabled(db).catch((e) =>
+    console.error("No se pudieron preparar los índices de pipedrive_id", e)
+  );
 }
 
 const ensureSharedStateTable = async (): Promise<boolean> => {
