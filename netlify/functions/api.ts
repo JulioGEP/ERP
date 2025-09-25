@@ -2615,8 +2615,8 @@ app.get("/deals", async (c) => {
 
   let deals = await listStoredDeals();
 
-  if (forceRefresh || deals.length === 0) {
-    await synchronizeDealsFromPipedrive({ force: forceRefresh, knownDeals: deals });
+  if (forceRefresh) {
+    await synchronizeDealsFromPipedrive({ force: true, knownDeals: deals });
     deals = await listStoredDeals();
   }
 
