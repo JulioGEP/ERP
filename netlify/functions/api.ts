@@ -3209,6 +3209,38 @@ app.put("/deal-extras", async (c) => {
 app.get("/health", (c) => c.json({ ok: true, at: new Date().toISOString() }));
 
 // Listado y detalle de deals (persistidos en BD)
+const DIRECT_FETCH_DEAL_LIMIT = (() => {
+  const limit = process.env.DIRECT_FETCH_DEAL_LIMIT;
+
+  if (!limit) {
+    return 20;
+  }
+
+  const parsed = Number.parseInt(limit, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 20;
+  }
+
+  return parsed;
+})();
+
+const DIRECT_FETCH_CONCURRENCY = (() => {
+  const concurrency = process.env.DIRECT_FETCH_CONCURRENCY;
+
+  if (!concurrency) {
+    return 5;
+  }
+
+  const parsed = Number.parseInt(concurrency, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 5;
+  }
+
+  return parsed;
+})();
+
 const fetchDealsDirectlyFromPipedrive = async (dealIds?: number[]): Promise<DealRecord[]> => {
   const targetDealIds = Array.isArray(dealIds) && dealIds.length > 0 ? dealIds : null;
 
@@ -3244,6 +3276,10 @@ const fetchDealsDirectlyFromPipedrive = async (dealIds?: number[]): Promise<Deal
     });
 
     identifiers = Array.from(collected.values());
+
+    if (identifiers.length > DIRECT_FETCH_DEAL_LIMIT) {
+      identifiers = identifiers.slice(0, DIRECT_FETCH_DEAL_LIMIT);
+    }
   }
 
   if (identifiers.length === 0) {
@@ -3260,24 +3296,36 @@ const fetchDealsDirectlyFromPipedrive = async (dealIds?: number[]): Promise<Deal
   }
 
   const deals: DealRecord[] = [];
+  const pending = [...identifiers];
 
-  for (const dealId of identifiers) {
-    try {
-      const rawDeal = await getDealById(dealId);
+  while (pending.length > 0) {
+    const batch = pending.splice(0, DIRECT_FETCH_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (dealId) => {
+        try {
+          const rawDeal = await getDealById(dealId);
 
-      if (!rawDeal) {
-        continue;
+          if (!rawDeal) {
+            return null;
+          }
+
+          if (typeof rawDeal !== "object" || rawDeal === null) {
+            throw new Error("Respuesta inesperada al obtener un presupuesto desde Pipedrive");
+          }
+
+          return mapPipedriveDealToRecord(rawDeal as Record<string, unknown>, fieldOptions);
+        } catch (error) {
+          console.error(`No se pudo obtener el deal ${dealId} directamente desde Pipedrive`, error);
+          return null;
+        }
+      })
+    );
+
+    results.forEach((deal) => {
+      if (deal) {
+        deals.push(deal);
       }
-
-      if (typeof rawDeal !== "object" || rawDeal === null) {
-        throw new Error("Respuesta inesperada al obtener un presupuesto desde Pipedrive");
-      }
-
-      const deal = mapPipedriveDealToRecord(rawDeal as Record<string, unknown>, fieldOptions);
-      deals.push(deal);
-    } catch (error) {
-      console.error(`No se pudo obtener el deal ${dealId} directamente desde Pipedrive`, error);
-    }
+    });
   }
 
   return deals;
