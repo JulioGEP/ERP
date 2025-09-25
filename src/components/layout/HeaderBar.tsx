@@ -11,38 +11,40 @@ interface HeaderBarProps {
 const HeaderBar = ({ activeKey, onNavigate }: HeaderBarProps) => (
   <header className="app-header shadow-sm">
     <Navbar bg="white" className="py-3" expand="lg">
-      <Container fluid>
+      <Container fluid className="align-items-center">
         <Navbar.Brand className="d-flex align-items-center gap-3">
           <img src={logo} alt="GEP Group" height={40} />
           <span>GEP Group - ERP</span>
         </Navbar.Brand>
+        <Navbar.Toggle aria-controls="app-header-navigation" />
+        <Navbar.Collapse
+          id="app-header-navigation"
+          className="justify-content-lg-end mt-3 mt-lg-0"
+        >
+          <Nav
+            activeKey={activeKey}
+            onSelect={(eventKey) => {
+              if (eventKey === 'calendar' || eventKey === 'backlog') {
+                onNavigate(eventKey);
+              }
+            }}
+            className="nav-tabs-clean flex-column flex-lg-row ms-lg-auto"
+            role="tablist"
+          >
+            <Nav.Item>
+              <Nav.Link eventKey="calendar" role="tab">
+                Calendario
+              </Nav.Link>
+            </Nav.Item>
+            <Nav.Item>
+              <Nav.Link eventKey="backlog" role="tab">
+                Presupuestos
+              </Nav.Link>
+            </Nav.Item>
+          </Nav>
+        </Navbar.Collapse>
       </Container>
     </Navbar>
-    <div className="app-header-nav">
-      <Container fluid>
-        <Nav
-          activeKey={activeKey}
-          onSelect={(eventKey) => {
-            if (eventKey === 'calendar' || eventKey === 'backlog') {
-              onNavigate(eventKey);
-            }
-          }}
-          className="nav-tabs-clean"
-          role="tablist"
-        >
-          <Nav.Item>
-            <Nav.Link eventKey="calendar" role="tab">
-              Calendario
-            </Nav.Link>
-          </Nav.Item>
-          <Nav.Item>
-            <Nav.Link eventKey="backlog" role="tab">
-              Presupuestos
-            </Nav.Link>
-          </Nav.Item>
-        </Nav>
-      </Container>
-    </div>
   </header>
 );
 
