@@ -101,6 +101,9 @@ const DOCUMENT_EXTENSIONS = new Set([
   'csv'
 ]);
 
+const SESSION_SEDE_OPTIONS = ['GEP Arganda', 'GEP Sabadell', 'In Company'] as const;
+const SESSION_SEDE_OPTION_SET = new Set<string>(SESSION_SEDE_OPTIONS);
+
 const extractExtension = (value: string | null | undefined): string | null => {
   if (typeof value !== 'string' || value.length === 0) {
     return null;
@@ -2238,13 +2241,29 @@ const DealDetailModal = ({
                                         <Col md={6}>
                                           <Form.Group controlId={`sede-${session.key}`}>
                                             <Form.Label>Sede</Form.Label>
-                                            <Form.Control
-                                              type="text"
+                                            <Form.Select
                                               value={session.sede}
                                               onChange={(event) =>
                                                 handleSessionFieldChange(session.key, 'sede', event.target.value)
                                               }
-                                            />
+                                            >
+                                              {session.sede === '' ? (
+                                                <option value="" disabled hidden>
+                                                  Selecciona una sede
+                                                </option>
+                                              ) : (
+                                                <option value="">Sin sede</option>
+                                              )}
+                                              {SESSION_SEDE_OPTIONS.map((option) => (
+                                                <option key={option} value={option}>
+                                                  {option}
+                                                </option>
+                                              ))}
+                                              {session.sede !== '' &&
+                                              !SESSION_SEDE_OPTION_SET.has(session.sede) ? (
+                                                <option value={session.sede}>{session.sede}</option>
+                                              ) : null}
+                                            </Form.Select>
                                           </Form.Group>
                                         </Col>
                                         <Col xs={12}>
