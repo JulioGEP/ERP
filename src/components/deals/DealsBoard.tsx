@@ -25,7 +25,8 @@ import {
   loadStoredManualDeals,
   persistHiddenDealIds,
   persistStoredManualDeals,
-  splitDealProductsByCode
+  splitDealProductsByCode,
+  syncDeal
 } from '../../services/deals';
 import DealDetailModal from './DealDetailModal';
 
@@ -905,20 +906,15 @@ const DealsBoard = ({
     onDealNotFound?.(parsedDealId);
   }, [events, filteredDeals, filters.id, onDealNotFound]);
 
-  const uploadDeal = useMutation({
-    mutationFn: (dealId: number) => fetchDealById(dealId, { refresh: true }),
-    onSuccess: (deal) => {
+  const uploadDeal = useMutation<void, unknown, number>({
+    mutationFn: (dealId: number) => syncDeal(dealId),
+    onSuccess: async (_, dealId) => {
       setFeedback({
         type: 'success',
-        message: `Presupuesto #${deal.id} sincronizado correctamente.`
+        message: `Presupuesto #${dealId} sincronizado correctamente.`
       });
 
-      queryClient.setQueryData<DealRecord[]>(['deals', 'stage-3'], (previous) => {
-        const current = previous ?? [];
-        const filtered = current.filter((item) => item.id !== deal.id);
-        return [deal, ...filtered];
-      });
-      registerManualDeal(deal);
+      await queryClient.invalidateQueries({ queryKey: ['deals', 'stage-3'] });
     },
     onError: (mutationError: unknown) => {
       setFeedback({

@@ -233,6 +233,32 @@ export const fetchDealById = async (
   return deal;
 };
 
+type SyncDealResponse = {
+  ok: boolean;
+  message?: string;
+};
+
+export const syncDeal = async (dealId: number): Promise<void> => {
+  const response = await fetch('/.netlify/functions/api/deals/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dealId })
+  });
+
+  let payload: SyncDealResponse | null = null;
+
+  try {
+    payload = (await response.json()) as SyncDealResponse;
+  } catch (error) {
+    console.error('No se pudo interpretar la respuesta al sincronizar el presupuesto', error);
+  }
+
+  if (!response.ok || !payload?.ok) {
+    const message = payload?.message ?? 'No se pudo sincronizar el presupuesto solicitado.';
+    throw new Error(message);
+  }
+};
+
 export const persistDeal = async (deal: DealRecord): Promise<DealRecord> => {
   const response = await fetch(NETLIFY_DEALS_ENDPOINT, {
     method: 'PUT',
