@@ -193,6 +193,8 @@ const DealsBoard = ({
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [filters, setFilters] = useState<DealsFilters>(() => createEmptyFilters());
   const lastPromptedDealIdRef = useRef<string | null>(null);
+  const shouldPersistManualDealsRef = useRef(false);
+  const shouldPersistHiddenDealIdsRef = useRef(false);
   const filterPanelId = 'deals-filters-panel';
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['deals', 'stage-3'],
@@ -201,10 +203,20 @@ const DealsBoard = ({
   });
 
   useEffect(() => {
+    if (!shouldPersistManualDealsRef.current) {
+      return;
+    }
+
+    shouldPersistManualDealsRef.current = false;
     void persistStoredManualDeals(manualDeals);
   }, [manualDeals]);
 
   useEffect(() => {
+    if (!shouldPersistHiddenDealIdsRef.current) {
+      return;
+    }
+
+    shouldPersistHiddenDealIdsRef.current = false;
     void persistHiddenDealIds(hiddenDealIds);
   }, [hiddenDealIds]);
 
@@ -221,8 +233,6 @@ const DealsBoard = ({
     let isActive = true;
 
     const synchronizeSharedData = async () => {
-      await Promise.all([persistStoredManualDeals(manualDeals), persistHiddenDealIds(hiddenDealIds)]);
-
       try {
         const [sharedManualDeals, sharedHiddenIds] = await Promise.all([
           fetchSharedManualDeals(),
@@ -270,9 +280,20 @@ const DealsBoard = ({
   const registerManualDeal = useCallback((deal: DealRecord) => {
     setManualDeals((previous) => {
       const filtered = previous.filter((item) => item.id !== deal.id);
-      return [deal, ...filtered];
+      const next = [deal, ...filtered];
+
+      shouldPersistManualDealsRef.current = true;
+      return next;
     });
-    setHiddenDealIds((previous) => previous.filter((dealId) => dealId !== deal.id));
+
+    setHiddenDealIds((previous) => {
+      if (!previous.includes(deal.id)) {
+        return previous;
+      }
+
+      shouldPersistHiddenDealIdsRef.current = true;
+      return previous.filter((dealId) => dealId !== deal.id);
+    });
   }, []);
 
   const dateFormatter = useMemo(
@@ -810,10 +831,20 @@ const DealsBoard = ({
         return previous;
       }
 
+      shouldPersistHiddenDealIdsRef.current = true;
       return [...previous, dealId];
     });
 
-    setManualDeals((previous) => previous.filter((deal) => deal.id !== dealId));
+    setManualDeals((previous) => {
+      const filtered = previous.filter((deal) => deal.id !== dealId);
+
+      if (filtered.length === previous.length) {
+        return previous;
+      }
+
+      shouldPersistManualDealsRef.current = true;
+      return filtered;
+    });
     setSelectedDealId((current) => (current === dealId ? null : current));
 
     queryClient.setQueryData<DealRecord[]>(['deals', 'stage-3'], (previous) => {
