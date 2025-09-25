@@ -45,6 +45,14 @@ import {
   listDealsUpdatedDesc,
   listPipelines
 } from "../../adapters/pipedrive";
+import {
+  buildExtrasSummary,
+  buildTrainingSummary,
+  classifyDealProducts,
+  extractDealPayload,
+  extractOrganizationPayload,
+  extractPersonPayload
+} from "../../src/sync/mappings";
 
 type DealNote = {
   id: string;
@@ -221,6 +229,320 @@ const createDatabaseClient = () => {
 };
 
 const db = createDatabaseClient();
+
+type DatabaseClient = NonNullable<ReturnType<typeof drizzle>>;
+
+const requireDb = (): DatabaseClient => {
+  if (!db) {
+    throw new Error("DATABASE_URL missing");
+  }
+
+  return db;
+};
+
+const toOptionalNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const toOptionalText = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+
+  return String(value);
+};
+
+const detectProductName = (product: Record<string, unknown>): string | null => {
+  return (
+    toOptionalText(product.name) ??
+    toOptionalText((product.product as Record<string, unknown> | undefined)?.name) ??
+    toOptionalText(product.item_title) ??
+    null
+  );
+};
+
+const detectProductCode = (product: Record<string, unknown>): string | null => {
+  return (
+    toOptionalText(product.code) ??
+    toOptionalText((product.product as Record<string, unknown> | undefined)?.code) ??
+    null
+  );
+};
+
+const detectIsTrainingProduct = (product: Record<string, unknown>): boolean => {
+  const code = detectProductCode(product);
+  if (!code) {
+    return false;
+  }
+
+  return code.toLowerCase().includes("form-");
+};
+
+const detectRecommendedHoursRaw = (product: Record<string, unknown>): string | null => {
+  return (
+    toOptionalText(product.recommended_hours) ??
+    toOptionalText(product.recommended_hours_raw) ??
+    toOptionalText((product.product as Record<string, unknown> | undefined)?.recommended_hours) ??
+    null
+  );
+};
+
+const detectRecommendedHours = (product: Record<string, unknown>): number | null => {
+  const raw = detectRecommendedHoursRaw(product);
+  return raw ? toOptionalNumber(raw) : null;
+};
+
+const detectProductPosition = (
+  product: Record<string, unknown>,
+  index: number
+): number => {
+  return (
+    toOptionalNumber(product.order_nr) ??
+    toOptionalNumber(product.order) ??
+    toOptionalNumber(product.sequence) ??
+    index
+  );
+};
+
+const syncDealProducts = async (
+  database: DatabaseClient,
+  dealId: number,
+  products: unknown[]
+): Promise<void> => {
+  await database.execute(sql`delete from deal_products where deal_id = ${dealId}`);
+
+  await Promise.all(
+    products.map(async (entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+
+      const product = entry as Record<string, unknown>;
+      const dealProductId =
+        toOptionalNumber(product.deal_product_id) ?? toOptionalNumber(product.id);
+
+      if (dealProductId === null) {
+        return;
+      }
+
+      const productId =
+        toOptionalNumber(product.product_id) ??
+        toOptionalNumber((product.product as Record<string, unknown> | undefined)?.id);
+      const quantity = toOptionalNumber(product.quantity);
+      const itemPrice = toOptionalNumber(product.item_price);
+      const recommendedHours = detectRecommendedHours(product);
+      const recommendedHoursRaw = detectRecommendedHoursRaw(product);
+      const position = detectProductPosition(product, index);
+      const code = detectProductCode(product);
+      const name = detectProductName(product) ?? `Producto ${dealProductId}`;
+
+      await database.execute(sql`
+        insert into deal_products (
+          deal_product_id,
+          deal_id,
+          product_id,
+          name,
+          code,
+          quantity,
+          item_price,
+          recommended_hours,
+          recommended_hours_raw,
+          is_training,
+          position,
+          updated_at
+        ) values (
+          ${dealProductId},
+          ${dealId},
+          ${productId},
+          ${name},
+          ${code},
+          ${quantity},
+          ${itemPrice},
+          ${recommendedHours},
+          ${recommendedHoursRaw},
+          ${detectIsTrainingProduct(product)},
+          ${position},
+          now()
+        )
+        on conflict (deal_product_id) do update set
+          deal_id = excluded.deal_id,
+          product_id = excluded.product_id,
+          name = excluded.name,
+          code = excluded.code,
+          quantity = excluded.quantity,
+          item_price = excluded.item_price,
+          recommended_hours = excluded.recommended_hours,
+          recommended_hours_raw = excluded.recommended_hours_raw,
+          is_training = excluded.is_training,
+          position = excluded.position,
+          updated_at = now()
+      `);
+    })
+  );
+};
+
+const upsertOrganization = async (
+  database: DatabaseClient,
+  organization: Record<string, unknown>
+): Promise<number> => {
+  const payload = extractOrganizationPayload(organization as any);
+  const result = await database.execute(sql`
+    insert into organizations (pipedrive_id, name, cif, phone, address, created_at, updated_at)
+    values (
+      ${payload.pipedriveId},
+      ${payload.name},
+      ${payload.cif},
+      ${payload.phone},
+      ${payload.address},
+      now(),
+      now()
+    )
+    on conflict (pipedrive_id) do update set
+      name = excluded.name,
+      cif = excluded.cif,
+      phone = excluded.phone,
+      address = excluded.address,
+      updated_at = now()
+    returning id
+  `);
+
+  const id = (result.rows as Array<{ id: number | null }>)[0]?.id ?? null;
+
+  if (id === null) {
+    throw new Error("No se pudo guardar la organización sincronizada");
+  }
+
+  return id;
+};
+
+const upsertPerson = async (
+  database: DatabaseClient,
+  person: Record<string, unknown>,
+  organizationId: number | null
+): Promise<number> => {
+  const payload = extractPersonPayload(person as any, organizationId);
+  const result = await database.execute(sql`
+    insert into persons (pipedrive_id, org_id, first_name, last_name, email, phone, created_at, updated_at)
+    values (
+      ${payload.pipedriveId},
+      ${payload.orgId},
+      ${payload.firstName},
+      ${payload.lastName},
+      ${payload.email},
+      ${payload.phone},
+      now(),
+      now()
+    )
+    on conflict (pipedrive_id) do update set
+      org_id = excluded.org_id,
+      first_name = excluded.first_name,
+      last_name = excluded.last_name,
+      email = excluded.email,
+      phone = excluded.phone,
+      updated_at = now()
+    returning id
+  `);
+
+  const id = (result.rows as Array<{ id: number | null }>)[0]?.id ?? null;
+
+  if (id === null) {
+    throw new Error("No se pudo guardar la persona sincronizada");
+  }
+
+  return id;
+};
+
+const upsertDeal = async (
+  database: DatabaseClient,
+  deal: Record<string, unknown>,
+  organizationId: number | null,
+  personId: number | null,
+  products: unknown[]
+): Promise<number> => {
+  const payload = extractDealPayload(deal as any);
+  const classification = classifyDealProducts(products as any[]);
+  const trainingSummary =
+    classification.trainingNames.length > 0
+      ? buildTrainingSummary(classification)
+      : null;
+  const extrasSummary =
+    classification.extraNames.length > 0 ? buildExtrasSummary(classification) : null;
+
+  const result = await database.execute(sql`
+    insert into deals (
+      pipedrive_id,
+      org_id,
+      person_id,
+      pipeline_id,
+      training,
+      prod_extra,
+      hours,
+      deal_direction,
+      site,
+      caes,
+      fundae,
+      hotel_night,
+      status,
+      created_at,
+      updated_at
+    ) values (
+      ${payload.pipedriveId},
+      ${organizationId},
+      ${personId},
+      ${payload.pipelineId},
+      ${trainingSummary},
+      ${extrasSummary},
+      ${payload.hours},
+      ${payload.direction},
+      ${payload.site},
+      ${payload.caes},
+      ${payload.fundae},
+      ${payload.hotelNight},
+      ${payload.status},
+      now(),
+      now()
+    )
+    on conflict (pipedrive_id) do update set
+      org_id = excluded.org_id,
+      person_id = excluded.person_id,
+      pipeline_id = excluded.pipeline_id,
+      training = excluded.training,
+      prod_extra = excluded.prod_extra,
+      hours = excluded.hours,
+      deal_direction = excluded.deal_direction,
+      site = excluded.site,
+      caes = excluded.caes,
+      fundae = excluded.fundae,
+      hotel_night = excluded.hotel_night,
+      status = excluded.status,
+      updated_at = now()
+    returning id
+  `);
+
+  const id = (result.rows as Array<{ id: number | null }>)[0]?.id ?? null;
+
+  if (id === null) {
+    throw new Error("No se pudo guardar el presupuesto sincronizado");
+  }
+
+  await syncDealProducts(database, id, products);
+
+  return id;
+};
 
 const SHARED_STATE_PERSISTENCE_ENABLED = (() => {
   const flag = process.env.ENABLE_SHARED_STATE_PERSISTENCE ?? process.env.SYNC_SHARED_STATE_TO_DATABASE;
@@ -3363,6 +3685,52 @@ app.post("/db-smoke", async (c) => {
   } catch (e: any) {
     console.error("DB-SMOKE FAIL", e);
     return c.json({ ok: false, error: String(e?.message ?? e) }, 500);
+  }
+});
+
+app.post("/deals/sync", async (c) => {
+  try {
+    const db = requireDb();
+    const { dealId } = await c.req.json<{ dealId: number }>();
+
+    if (!dealId) return c.json({ error: "Missing dealId" }, 400);
+
+    const baseUrl =
+      process.env.PIPEDRIVE_API_BASE ??
+      process.env.PIPEDRIVE_BASE_URL ??
+      "https://api.pipedrive.com/v1";
+    const token = process.env.PIPEDRIVE_API_TOKEN;
+    if (!token) throw new Error("PIPEDRIVE_API_TOKEN missing");
+    const q = (path: string) =>
+      `${baseUrl}${path}${path.includes("?") ? "&" : "?"}api_token=${token}`;
+
+    const dealRes = await fetch(q(`/deals/${dealId}`));
+    if (!dealRes.ok) throw new Error(`Pipedrive /deals/${dealId} ${dealRes.status}`);
+    const deal = (await dealRes.json()).data;
+
+    const org = deal?.org_id?.value
+      ? (await (await fetch(q(`/organizations/${deal.org_id.value}`))).json()).data
+      : null;
+
+    const person = deal?.person_id?.value
+      ? (await (await fetch(q(`/persons/${deal.person_id.value}`))).json()).data
+      : null;
+
+    const prodsRes = await fetch(q(`/deals/${dealId}/products`));
+    const prodsJson = await prodsRes.json();
+    const products = Array.isArray(prodsJson?.data) ? prodsJson.data : [];
+
+    const orgId = org ? await upsertOrganization(db, org) : null;
+    const personId = person ? await upsertPerson(db, person, orgId ?? null) : null;
+    const localDealId = await upsertDeal(db, deal, orgId ?? null, personId ?? null, products);
+
+    return c.json({ ok: true, dealId: localDealId }, 201);
+  } catch (e: any) {
+    console.error("SYNC DEAL FAIL", { msg: e?.message, code: e?.code, detail: e?.detail });
+    return c.json(
+      { ok: false, error: "SYNC_FAIL", message: e?.message ?? "Internal" },
+      500
+    );
   }
 });
 
