@@ -35,6 +35,7 @@ import {
   StoredDealDocument,
   StoredDealNote
 } from '../../services/dealExtras';
+import { resolveFormationRecommendedHoursFromList } from '../../data/formationRecommendedHours';
 
 interface DealDetailModalProps {
   show: boolean;
@@ -702,6 +703,37 @@ const DealDetailModal = ({
     [deal.formations, trainingProducts]
   );
 
+  const recommendedHoursMetadata = useMemo(() => {
+    const map = new Map<number, { numeric: number | null; raw: string | null }>();
+    const formationCandidates = formationLabels;
+
+    trainingProducts.forEach((product) => {
+      let numeric = product.recommendedHours ?? null;
+      let raw =
+        product.recommendedHoursRaw ?? (numeric != null ? String(numeric) : null);
+
+      if (numeric == null) {
+        const resolved = resolveFormationRecommendedHoursFromList([
+          product.recommendedHoursRaw,
+          product.name,
+          product.code,
+          ...formationCandidates
+        ]);
+
+        if (resolved != null) {
+          numeric = resolved;
+          if (!raw) {
+            raw = `${resolved} horas`;
+          }
+        }
+      }
+
+      map.set(product.dealProductId, { numeric, raw });
+    });
+
+    return map;
+  }, [formationLabels, trainingProducts]);
+
   const productMap = useMemo(() => {
     const byDealProductId = new Map<number, string>();
     const byProductId = new Map<number, string>();
@@ -835,13 +867,17 @@ const DealDetailModal = ({
               ? [legacyMobileUnit.trim()]
               : [];
 
+        const recommended = recommendedHoursMetadata.get(product.dealProductId);
+        const recommendedHours = recommended?.numeric ?? product.recommendedHours ?? null;
+        const recommendedHoursRaw = recommended?.raw ?? product.recommendedHoursRaw ?? null;
+
         return {
           key,
           dealProductId: product.dealProductId,
           productId: product.productId,
           productName: product.name,
-          recommendedHours: product.recommendedHours,
-          recommendedHoursRaw: product.recommendedHoursRaw,
+          recommendedHours,
+          recommendedHoursRaw,
           sessionIndex: index,
           start: formatDateTimeInput(existingEvent?.start),
           end: formatDateTimeInput(existingEvent?.end),
@@ -857,7 +893,7 @@ const DealDetailModal = ({
         } satisfies SessionFormEntry;
       });
     });
-  }, [deal.address, deal.sede, eventsByKey, trainingProducts]);
+  }, [deal.address, deal.sede, eventsByKey, recommendedHoursMetadata, trainingProducts]);
 
   const [sessions, setSessions] = useState<SessionFormEntry[]>(initialSessions);
 
@@ -879,13 +915,16 @@ const DealDetailModal = ({
   );
 
   const initialRecommendedHoursByProduct = useMemo(() => {
-    const entries = trainingProducts.map((product) => [
-      product.dealProductId,
-      product.recommendedHours != null ? String(product.recommendedHours) : ''
-    ]);
+    const entries = trainingProducts.map((product) => {
+      const recommended = recommendedHoursMetadata.get(product.dealProductId);
+      const numeric = recommended?.numeric ?? product.recommendedHours ?? null;
+      const value = numeric != null ? String(numeric) : '';
+
+      return [product.dealProductId, value];
+    });
 
     return Object.fromEntries(entries) as Record<number, string>;
-  }, [trainingProducts]);
+  }, [recommendedHoursMetadata, trainingProducts]);
 
   const [recommendedHoursByProduct, setRecommendedHoursByProduct] = useState(
     initialRecommendedHoursByProduct
@@ -932,6 +971,12 @@ const DealDetailModal = ({
     setSessions(initialSessions);
     setSessionWarnings({});
   }, [initialSessions, show]);
+
+  useEffect(() => {
+    if (show) {
+      setRecommendedHoursByProduct(initialRecommendedHoursByProduct);
+    }
+  }, [initialRecommendedHoursByProduct, show]);
 
   useEffect(() => {
     if (show) {
@@ -2142,6 +2187,12 @@ const DealDetailModal = ({
                   {trainingProducts.map((product) => {
                     const productSessions = sessions.filter((session) => session.dealProductId === product.dealProductId);
                     const sessionCount = countSessionsForProduct(product);
+                    const recommendedInfo = recommendedHoursMetadata.get(product.dealProductId);
+                    const recommendedDisplay =
+                      recommendedInfo?.raw ??
+                      (recommendedInfo?.numeric != null
+                        ? `${recommendedInfo.numeric} horas`
+                        : product.recommendedHoursRaw ?? null);
                     return (
                       <div key={`calendar-${product.dealProductId}`} className="border rounded p-3">
                         <div className="d-flex justify-content-between align-items-center mb-3">
@@ -2149,7 +2200,7 @@ const DealDetailModal = ({
                             <div className="fw-semibold">{product.name}</div>
                             <div className="text-muted small">
                               {sessionCount} sesión{sessionCount === 1 ? '' : 'es'} ·{' '}
-                              {product.recommendedHoursRaw ?? 'Horas recomendadas no disponibles'}
+                              {recommendedDisplay ?? 'Horas recomendadas no disponibles'}
                             </div>
                           </div>
                         </div>
