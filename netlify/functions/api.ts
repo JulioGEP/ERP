@@ -3208,129 +3208,6 @@ app.put("/deal-extras", async (c) => {
 // Health
 app.get("/health", (c) => c.json({ ok: true, at: new Date().toISOString() }));
 
-// Listado y detalle de deals (persistidos en BD)
-const DIRECT_FETCH_DEAL_LIMIT = (() => {
-  const limit = process.env.DIRECT_FETCH_DEAL_LIMIT;
-
-  if (!limit) {
-    return 20;
-  }
-
-  const parsed = Number.parseInt(limit, 10);
-
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 20;
-  }
-
-  return parsed;
-})();
-
-const DIRECT_FETCH_CONCURRENCY = (() => {
-  const concurrency = process.env.DIRECT_FETCH_CONCURRENCY;
-
-  if (!concurrency) {
-    return 5;
-  }
-
-  const parsed = Number.parseInt(concurrency, 10);
-
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return 5;
-  }
-
-  return parsed;
-})();
-
-const fetchDealsDirectlyFromPipedrive = async (dealIds?: number[]): Promise<DealRecord[]> => {
-  const targetDealIds = Array.isArray(dealIds) && dealIds.length > 0 ? dealIds : null;
-
-  let identifiers: number[] = [];
-
-  if (targetDealIds) {
-    identifiers = targetDealIds.filter((value): value is number => Number.isFinite(value));
-  } else {
-    let remoteDeals: unknown[];
-
-    try {
-      remoteDeals = await listDealsUpdatedDesc(100);
-    } catch (error) {
-      console.error(
-        "No se pudo obtener la lista de deals desde Pipedrive para la respuesta directa",
-        error
-      );
-      return [];
-    }
-
-    const collected = new Set<number>();
-    remoteDeals.forEach((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return;
-      }
-
-      const record = entry as Record<string, unknown>;
-      const identifier = parseDealIdentifier(record.id);
-
-      if (identifier !== null && !collected.has(identifier)) {
-        collected.add(identifier);
-      }
-    });
-
-    identifiers = Array.from(collected.values());
-
-    if (identifiers.length > DIRECT_FETCH_DEAL_LIMIT) {
-      identifiers = identifiers.slice(0, DIRECT_FETCH_DEAL_LIMIT);
-    }
-  }
-
-  if (identifiers.length === 0) {
-    return [];
-  }
-
-  let fieldOptions: SingleOptionFieldOptions = {};
-
-  try {
-    fieldOptions = await loadDealFieldOptions();
-  } catch (error) {
-    console.error("No se pudieron cargar los metadatos de campos de Pipedrive", error);
-    fieldOptions = {};
-  }
-
-  const deals: DealRecord[] = [];
-  const pending = [...identifiers];
-
-  while (pending.length > 0) {
-    const batch = pending.splice(0, DIRECT_FETCH_CONCURRENCY);
-    const results = await Promise.all(
-      batch.map(async (dealId) => {
-        try {
-          const rawDeal = await getDealById(dealId);
-
-          if (!rawDeal) {
-            return null;
-          }
-
-          if (typeof rawDeal !== "object" || rawDeal === null) {
-            throw new Error("Respuesta inesperada al obtener un presupuesto desde Pipedrive");
-          }
-
-          return mapPipedriveDealToRecord(rawDeal as Record<string, unknown>, fieldOptions);
-        } catch (error) {
-          console.error(`No se pudo obtener el deal ${dealId} directamente desde Pipedrive`, error);
-          return null;
-        }
-      })
-    );
-
-    results.forEach((deal) => {
-      if (deal) {
-        deals.push(deal);
-      }
-    });
-  }
-
-  return deals;
-};
-
 app.get("/deals", async (c) => {
   const url = new URL(c.req.url);
   const dealIdParam = url.searchParams.get("dealId");
@@ -3371,31 +3248,14 @@ app.get("/deals", async (c) => {
       const rawDeal = await getDealById(dealId);
 
       if (!rawDeal) {
-        try {
-          await deleteStoredDeal(dealId);
-        } catch (error) {
-          if (error instanceof DatabaseError) {
-            return c.json(
-              {
-                deal: storedDeal,
-                refreshed: false,
-                message: error.message
-              },
-              503
-            );
-          }
-
-          console.error(
-            `No se pudo eliminar el presupuesto ${dealId} tras no encontrarlo en Pipedrive`,
-            error
-          );
+        if (storedDeal) {
           return c.json(
             {
               deal: storedDeal,
               refreshed: false,
-              message: "No se pudo eliminar el presupuesto ausente en la base de datos."
+              message: "No se encontró el presupuesto solicitado en Pipedrive."
             },
-            500
+            200
           );
         }
 
@@ -3422,44 +3282,9 @@ app.get("/deals", async (c) => {
         rawDeal as Record<string, unknown>,
         fieldOptions
       );
-      try {
-        await saveDealRecord(deal);
-      } catch (error) {
-        if (error instanceof DatabaseError) {
-          console.error(
-            "No se pudo guardar el presupuesto actualizado en la base de datos; se responderá igualmente",
-            error
-          );
-        } else {
-          throw error;
-        }
-      }
+
       return c.json({ deal, refreshed: true });
     } catch (error) {
-      if (error instanceof DatabaseError) {
-        if (storedDeal) {
-          return c.json({
-            deal: storedDeal,
-            refreshed: false,
-            message: storedDealError?.message ?? error.message
-          });
-        }
-
-        const fallbackDeal = await fetchDealsDirectlyFromPipedrive([dealId]);
-
-        if (fallbackDeal.length > 0) {
-          return c.json({ deal: fallbackDeal[0], refreshed: true });
-        }
-
-        return c.json(
-          {
-            deal: null,
-            message: storedDealError?.message ?? error.message
-          },
-          503
-        );
-      }
-
       console.error(`Error al consultar el deal ${dealId} en Pipedrive`, error);
 
       if (storedDeal) {
@@ -3467,14 +3292,18 @@ app.get("/deals", async (c) => {
           deal: storedDeal,
           refreshed: false,
           message:
+            storedDealError?.message ??
             "Se devolvió la versión almacenada del presupuesto porque no se pudo actualizar desde Pipedrive."
         });
       }
 
-      return c.json(
-        { deal: null, message: "No se pudo obtener el presupuesto desde Pipedrive." },
-        502
-      );
+      const message =
+        storedDealError?.message ??
+        (error instanceof Error
+          ? error.message
+          : "No se pudo obtener el presupuesto desde Pipedrive.");
+
+      return c.json({ deal: null, message }, 502);
     }
   }
 
@@ -3496,13 +3325,7 @@ app.get("/deals", async (c) => {
   }
 
   if (storageError) {
-    const fallbackDeals = await fetchDealsDirectlyFromPipedrive();
-
-    if (fallbackDeals.length === 0) {
-      return c.json({ deals: [], page: 1, limit: 0, message: storageError.message }, 503);
-    }
-
-    return c.json({ deals: fallbackDeals, page: 1, limit: fallbackDeals.length });
+    return c.json({ deals: [], page: 1, limit: 0, message: storageError.message }, 503);
   }
 
   if (forceRefresh) {
@@ -3512,13 +3335,7 @@ app.get("/deals", async (c) => {
       deals = await listStoredDeals();
     } catch (error) {
       if (error instanceof DatabaseError) {
-        const fallbackDeals = await fetchDealsDirectlyFromPipedrive();
-
-        if (fallbackDeals.length === 0) {
-          return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 503);
-        }
-
-        return c.json({ deals: fallbackDeals, page: 1, limit: fallbackDeals.length });
+        return c.json({ deals: [], page: 1, limit: 0, message: error.message }, 503);
       }
 
       console.error(
