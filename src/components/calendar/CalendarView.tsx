@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EventClickArg } from '@fullcalendar/core';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -23,6 +23,10 @@ import {
 interface CalendarViewProps {
   events: CalendarEvent[];
   onSelectEvent?: (event: CalendarEvent) => void;
+  dealIdFilter?: string;
+  onDealIdFilterChange?: (value: string) => void;
+  knownDealIds?: number[];
+  onDealNotFound?: (dealId: number) => void;
 }
 
 type FilterKey =
@@ -160,9 +164,17 @@ const buildEventTitle = (event: CalendarEvent) => {
   return segments.join(' · ');
 };
 
-const CalendarView = ({ events, onSelectEvent }: CalendarViewProps) => {
+const CalendarView = ({
+  events,
+  onSelectEvent,
+  dealIdFilter,
+  onDealIdFilterChange,
+  knownDealIds = [],
+  onDealNotFound
+}: CalendarViewProps) => {
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [filters, setFilters] = useState<CalendarFilters>(() => createEmptyFilters());
+  const lastPromptedDealIdRef = useRef<string | null>(null);
   const filterPanelId = 'calendar-filters-panel';
 
   const availableTrainers = useMemo(() => {
@@ -281,13 +293,21 @@ const CalendarView = ({ events, onSelectEvent }: CalendarViewProps) => {
     [mobileUnitOptions, trainerOptions]
   );
 
-  const handleFilterChange = useCallback((key: FilterKey, value: string) => {
-    setFilters((previous) => ({ ...previous, [key]: value }));
-  }, []);
+  const handleFilterChange = useCallback(
+    (key: FilterKey, value: string) => {
+      setFilters((previous) => ({ ...previous, [key]: value }));
+
+      if (key === 'id') {
+        onDealIdFilterChange?.(value);
+      }
+    },
+    [onDealIdFilterChange]
+  );
 
   const handleResetFilters = useCallback(() => {
     setFilters(createEmptyFilters());
-  }, []);
+    onDealIdFilterChange?.('');
+  }, [onDealIdFilterChange]);
 
   const getFilterFieldValue = useCallback((event: CalendarEvent, key: FilterKey): string => {
     switch (key) {
@@ -330,6 +350,23 @@ const CalendarView = ({ events, onSelectEvent }: CalendarViewProps) => {
   const activeFilterCount = normalizedFilters.length;
   const isFiltering = activeFilterCount > 0;
 
+  useEffect(() => {
+    if (dealIdFilter == null) {
+      return;
+    }
+
+    setFilters((current) => {
+      if (current.id === dealIdFilter) {
+        return current;
+      }
+
+      return {
+        ...current,
+        id: dealIdFilter
+      };
+    });
+  }, [dealIdFilter]);
+
   const filteredEvents = useMemo<CalendarEvent[]>(() => {
     if (events.length === 0) {
       return [];
@@ -348,6 +385,39 @@ const CalendarView = ({ events, onSelectEvent }: CalendarViewProps) => {
   }, [events, normalizedFilters, getFilterFieldValue]);
 
   const showEmptyState = isFiltering && filteredEvents.length === 0;
+
+  useEffect(() => {
+    const trimmed = filters.id.trim();
+
+    if (trimmed.length === 0) {
+      lastPromptedDealIdRef.current = null;
+      return;
+    }
+
+    if (filteredEvents.length > 0) {
+      lastPromptedDealIdRef.current = null;
+      return;
+    }
+
+    if (lastPromptedDealIdRef.current === trimmed) {
+      return;
+    }
+
+    const parsedDealId = Number(trimmed);
+
+    if (!Number.isFinite(parsedDealId)) {
+      lastPromptedDealIdRef.current = trimmed;
+      return;
+    }
+
+    if (!knownDealIds.includes(parsedDealId)) {
+      lastPromptedDealIdRef.current = trimmed;
+      return;
+    }
+
+    lastPromptedDealIdRef.current = trimmed;
+    onDealNotFound?.(parsedDealId);
+  }, [filteredEvents, filters.id, knownDealIds, onDealNotFound]);
 
   return (
     <Card className="calendar-card border-0">
