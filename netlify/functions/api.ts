@@ -315,6 +315,9 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
       `);
     })().catch((error) => {
       console.error("No se pudieron inicializar las tablas de deals", error);
+      // Restablecemos la promesa para permitir reintentos en posteriores llamadas
+      // cuando el fallo sea transitorio.
+      dealStorageSetupPromise = null;
       throw error;
     });
   }
@@ -324,6 +327,7 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
     return true;
   } catch (error) {
     console.error("Fallo al comprobar las tablas de deals", error);
+    dealStorageSetupPromise = null;
     return false;
   }
 };
