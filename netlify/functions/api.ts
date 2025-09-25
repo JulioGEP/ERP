@@ -94,6 +94,17 @@ const createDatabaseClient = () => {
 
 const db = createDatabaseClient();
 
+const SHARED_STATE_PERSISTENCE_ENABLED = (() => {
+  const flag = process.env.ENABLE_SHARED_STATE_PERSISTENCE ?? process.env.SYNC_SHARED_STATE_TO_DATABASE;
+
+  if (typeof flag !== "string") {
+    return false;
+  }
+
+  const normalised = flag.trim().toLowerCase();
+  return normalised === "1" || normalised === "true" || normalised === "yes" || normalised === "si";
+})();
+
 type SharedStateEntry = {
   value: unknown;
   updatedAt: string;
@@ -104,7 +115,7 @@ const inMemorySharedState = new Map<string, SharedStateEntry>();
 let sharedStateTablePromise: Promise<void> | null = null;
 
 const ensureSharedStateTable = async (): Promise<boolean> => {
-  if (!db) {
+  if (!db || !SHARED_STATE_PERSISTENCE_ENABLED) {
     return false;
   }
 
@@ -134,7 +145,7 @@ const ensureSharedStateTable = async (): Promise<boolean> => {
 };
 
 const readSharedState = async <T>(key: string, fallback: T): Promise<T> => {
-  if (!db) {
+  if (!db || !SHARED_STATE_PERSISTENCE_ENABLED) {
     const stored = inMemorySharedState.get(key);
     return stored ? (stored.value as T) : fallback;
   }
@@ -172,19 +183,20 @@ const readSharedState = async <T>(key: string, fallback: T): Promise<T> => {
 const writeSharedState = async <T>(key: string, value: T): Promise<void> => {
   const serializedValue = value as unknown;
 
-  if (!db) {
-    inMemorySharedState.set(key, { value: serializedValue, updatedAt: new Date().toISOString() });
+  const entry: SharedStateEntry = { value: serializedValue, updatedAt: new Date().toISOString() };
+  inMemorySharedState.set(key, entry);
+
+  if (!db || !SHARED_STATE_PERSISTENCE_ENABLED) {
     return;
   }
 
   const ensured = await ensureSharedStateTable();
   if (!ensured) {
-    inMemorySharedState.set(key, { value: serializedValue, updatedAt: new Date().toISOString() });
     return;
   }
 
   try {
-    const now = new Date();
+    const now = new Date(entry.updatedAt);
     await db
       .insert(sharedState)
       .values({ key, value: serializedValue as any, updatedAt: now })
@@ -194,7 +206,6 @@ const writeSharedState = async <T>(key: string, value: T): Promise<void> => {
       });
   } catch (error) {
     console.error(`No se pudo guardar el estado compartido para ${key}`, error);
-    inMemorySharedState.set(key, { value: serializedValue, updatedAt: new Date().toISOString() });
   }
 };
 
