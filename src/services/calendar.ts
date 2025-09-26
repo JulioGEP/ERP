@@ -148,6 +148,46 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     return trimmed.length > 0 ? trimmed : null;
   };
 
+  const parseOptionalYesNo = (value: unknown): string | null => {
+    if (typeof value === 'boolean') {
+      return value ? 'si' : 'no';
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (value === 1) {
+        return 'si';
+      }
+
+      if (value === 0) {
+        return 'no';
+      }
+
+      return String(value);
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+
+      if (trimmed.length === 0) {
+        return null;
+      }
+
+      const normalized = trimmed.toLocaleLowerCase('es');
+
+      if (["1", "true", "yes", "si", "sí", "t"].includes(normalized)) {
+        return 'si';
+      }
+
+      if (["0", "false", "no", "f"].includes(normalized)) {
+        return 'no';
+      }
+
+      return trimmed;
+    }
+
+    return null;
+  };
+
   const parseNumber = (value: unknown, fallback: number): number =>
     typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
@@ -199,9 +239,9 @@ const sanitizeCalendarEvent = (event: StoredCalendarEvent): CalendarEvent => {
     trainers,
     mobileUnits,
     formations: sanitizeStringArray((event as { formations?: unknown }).formations),
-    fundae: parseOptionalString((event as { fundae?: unknown }).fundae),
-    caes: parseOptionalString((event as { caes?: unknown }).caes),
-    hotelPernocta: parseOptionalString((event as { hotelPernocta?: unknown }).hotelPernocta),
+    fundae: parseOptionalYesNo((event as { fundae?: unknown }).fundae),
+    caes: parseOptionalYesNo((event as { caes?: unknown }).caes),
+    hotelPernocta: parseOptionalYesNo((event as { hotelPernocta?: unknown }).hotelPernocta),
     logisticsInfo: parseOptionalString(event.logisticsInfo),
     manualState: parseManualState((event as { manualState?: unknown }).manualState)
   };
