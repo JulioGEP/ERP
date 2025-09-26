@@ -4,11 +4,11 @@
   publish = "dist"
 
 [dev]
-  command = "vite"                # cómo arrancas el front en desarrollo
-  port = 5173                     # puerto Vite (Netlify lo proxifica en 8888)
-  targetPort = 5173
+  command = "vite"        # cómo arrancas el front en dev
+  port = 8888             # puerto expuesto por Netlify Dev
+  targetPort = 5173       # puerto donde Vite sirve la app
   framework = "vite"
 
 [functions]
-  directory = "netlify/functions" # donde viven tus serverless functions
+  directory = "netlify/functions"
   node_bundler = "esbuild"
