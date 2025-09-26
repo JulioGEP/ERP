@@ -1,388 +1,245 @@
-// netlify/functions/api.ts (REEMPLAZO COMPLETO)
+// netlify/functions/api.ts
+import { Hono } from 'hono';
+import { handle } from 'hono/netlify';
 
-// ───────────────────────────────── Imports (arriba SIEMPRE)
-import type { Handler } from "@netlify/functions";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
-import { sql } from "drizzle-orm";
+// ✔️ Mapa de campos centralizado (sin legacy 'site' ni 'hotel_night')
+import { PIPEDRIVE_FIELDS } from '../../src/shared/pipedriveFields';
 
-// ───────────────────────────────── DB bootstrap
-const createDb = () => {
-  const url = process.env.DATABASE_URL;
-  if (!url || typeof url !== "string" || url.trim().length === 0) return null;
-  try {
-    return drizzle(neon(url));
-  } catch (err) {
-    console.error("DB bootstrap error:", err);
-    return null;
-  }
-};
-const db = createDb();
-const requireDb = () => {
-  if (!db) throw new Error("DATABASE_URL not configured or DB unavailable");
-  return db;
-};
+// --- Config ---
+const PIPEDRIVE_BASE_URL = process.env.PIPEDRIVE_BASE_URL?.trim() || 'https://api.pipedrive.com/v1';
+const PIPEDRIVE_API_TOKEN = process.env.PIPEDRIVE_API_TOKEN || process.env.PIPEDRIVE_TOKEN || '';
 
-// ───────────────────────────────── Utils (UNA SOLA VEZ)
-const toOptionalText = (v: unknown): string | null => {
-  if (v === null || v === undefined) return null;
-  const t = String(v).trim();
-  return t.length > 0 ? t : null;
-};
-const toOptionalString = toOptionalText;
-const toOptionalNumber = (v: unknown): number | null => {
-  if (v === null || v === undefined) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
-const toBool = (v: unknown): boolean | null => {
-  if (v === null || v === undefined) return null;
-  if (typeof v === "boolean") return v;
-  const t = String(v).trim().toLowerCase();
-  if (["true", "1", "yes", "si"].includes(t)) return true;
-  if (["false", "0", "no"].includes(t)) return false;
-  return null;
-};
-const readNestedString = (obj: unknown, key: string): string | null => {
-  if (!obj || typeof obj !== "object") return null;
-  const val = (obj as Record<string, unknown>)[key];
-  return typeof val === "string" && val.trim().length > 0 ? val : null;
-};
-const normaliseArray = (value: unknown): unknown[] =>
-  Array.isArray(value)
-    ? value
-    : value && typeof value === "object"
-    ? (["items", "data", "values", "results"]
-        .map((k) => (value as Record<string, unknown>)[k])
-        .find((x) => Array.isArray(x)) as unknown[] | undefined) ?? []
-    : [];
-const ensureId = (value: unknown, prefix: string, index: number): string =>
-  toOptionalText(value) ?? `${prefix}-${index}`;
-
-// ───────────────────────────────── Index setup (guarded)
-const ENABLE_DB_INDEX_SETUP =
-  (process.env.ENABLE_DB_INDEX_SETUP ?? "").toString().trim().toLowerCase() === "true";
-
-const ensurePipedriveIndexes = async () => {
-  if (!db || !ENABLE_DB_INDEX_SETUP) return;
-  const statements = [
-    "create unique index if not exists organizations_pipedrive_id_key on organizations(pipedrive_id)",
-    "create unique index if not exists persons_pipedrive_id_key on persons(pipedrive_id)",
-    "create unique index if not exists deals_pipedrive_id_key on deals(pipedrive_id)",
-    "create unique index if not exists notes_pipedrive_id_key on notes(pipedrive_id)",
-    "create unique index if not exists documents_pipedrive_id_key on documents(pipedrive_id)",
-  ];
-  for (const s of statements) {
-    try {
-      await db.execute(sql.raw(s));
-    } catch (e: any) {
-      const msg = typeof e?.message === "string" ? e.message : "";
-      if (!msg.toLowerCase().includes("already exists")) {
-        console.error("INDEX SETUP FAIL:", s, e);
-        throw e;
-      }
-    }
-  }
-};
-if (db) {
-  ensurePipedriveIndexes().catch((e) => {
-    console.error("Pipedrive index preparation failed (guarded):", e);
-  });
+if (!PIPEDRIVE_API_TOKEN) {
+  // Aviso temprano en logs; la función seguirá respondiendo con 500 si se llama a endpoints que lo requieran
+  console.warn('[api] Missing PIPEDRIVE_API_TOKEN env var');
 }
 
-// ───────────────────────────────── Hono app (Única instancia)
-const app = new Hono().basePath("/.netlify/functions/api");
-app.use("*", cors());
+const app = new Hono();
 
-// ───────────────────────────────── GET /deals (lee SIEMPRE de Neon)
-app.get("/deals", async (c) => {
-  try {
-    const db = requireDb();
-
-    const page = Math.max(1, Number(c.req.query("page") ?? 1));
-    const limit = Math.max(0, Number(c.req.query("limit") ?? 50));
-    const offset = Math.max(0, (page - 1) * (limit || 0));
-
-    // ids?=1,2,3
-    const idsParam = toOptionalText(c.req.query("ids"));
-    const ids = idsParam
-      ? idsParam.split(",").map((x) => Number(x.trim())).filter((n) => Number.isFinite(n))
-      : [];
-
-    const filter = ids.length
-      ? sql`where d.id in (${sql.join(ids.map((id) => sql`${id}`), sql`,`)})`
-      : sql``;
-
-    const pagination = limit > 0 ? sql`limit ${limit} offset ${offset}` : sql``;
-
-    const res = await db.execute(sql`
-      select
-        d.id,
-        d.pipedrive_id,
-        d.org_id as client_id,
-        o.name as client_name,
-        d.site as sede,
-        d.deal_direction as address,
-        d.caes,
-        d.fundae,
-        d.hotel_night as hotel_pernocta,
-        d.pipeline_id,
-        d.updated_at
-      from deals d
-      left join organizations o on o.id = d.org_id
-      ${filter}
-      order by d.updated_at desc, d.id desc
-      ${pagination}
-    `);
-
-    return c.json(
-      {
-        deals: (res.rows as any[]).map((r) => ({
-          id: Number(r.id),
-          pipedrive_id: r.pipedrive_id ? Number(r.pipedrive_id) : null,
-          client_id: r.client_id ? Number(r.client_id) : null,
-          client_name: r.client_name ?? null,
-          sede: r.sede ?? null,
-          address: r.address ?? null,
-          caes: r.caes ?? null,
-          fundae: r.fundae ?? null,
-          hotel_pernocta: r.hotel_pernocta ?? null,
-          pipeline_id: r.pipeline_id ? Number(r.pipeline_id) : null,
-          updated_at: r.updated_at,
-        })),
-        page,
-        limit,
-      },
-      200
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("GET /deals error:", message);
-    return c.json({ error: "DB_ERROR", message }, 500);
+// Util: construir URL a Pipedrive con token
+const pd = (path: string, searchParams?: Record<string, string | number | boolean | undefined>) => {
+  const url = new URL(path.startsWith('http') ? path : `${PIPEDRIVE_BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`);
+  url.searchParams.set('api_token', PIPEDRIVE_API_TOKEN);
+  if (searchParams) {
+    Object.entries(searchParams).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    });
   }
-});
-
-// ───────────────────────────────── Helpers UPSERT (parametrizado)
-const upsertOrganization = async (
-  dbi: ReturnType<typeof requireDb>,
-  org: Record<string, unknown>
-): Promise<number> => {
-  const pipedriveId = toOptionalNumber(org.id);
-  const name = toOptionalString(org.name) ?? "Sin nombre";
-  const cif = toOptionalString(
-    (org as any)["6d39d015a33921753410c1bab0b067ca93b8cf2c"] // CIF
-  );
-  const phone = toOptionalString(
-    (org as any)["b4379db06dfbe0758d84c2c2dd45ef04fa093b6d"] // Teléfono Org
-  );
-  const address = toOptionalString(org.address);
-
-  const res = await dbi.execute(sql`
-    insert into organizations (pipedrive_id, name, cif, phone, address, created_at, updated_at)
-    values (${pipedriveId}, ${name}, ${cif}, ${phone}, ${address}, now(), now())
-    on conflict (pipedrive_id) do update
-      set name = excluded.name,
-          cif = excluded.cif,
-          phone = excluded.phone,
-          address = excluded.address,
-          updated_at = now()
-    returning id
-  `);
-  return Number((res.rows as any[])[0].id);
+  return url.toString();
 };
 
-const upsertPerson = async (
-  dbi: ReturnType<typeof requireDb>,
-  person: Record<string, unknown>,
-  orgId: number | null
-): Promise<number> => {
-  const pipedriveId = toOptionalNumber(person.id);
-  const firstName = toOptionalString(person.first_name);
-  const lastName = toOptionalString(person.last_name);
+// Util: fetch JSON con manejo básico de errores
+async function fetchJSON<T = any>(input: string | Request, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status} - ${res.statusText} :: ${text}`);
+  }
+  return (await res.json()) as T;
+}
 
-  // email / phone pueden venir como string o array de objetos { value, primary }
-  const pickPrimary = (v: unknown): string | null => {
-    if (typeof v === "string") return toOptionalString(v);
-    const arr = normaliseArray(v);
-    const primary = (arr.find((x: any) => x?.primary === true) ??
-      arr[0]) as Record<string, unknown> | undefined;
-    return primary ? toOptionalString(primary.value) : null;
+// Util: mapea campos custom de un deal usando PIPEDRIVE_FIELDS
+function mapDealCustomFields(anyDeal: Record<string, any>) {
+  const f = PIPEDRIVE_FIELDS;
+  return {
+    sede: anyDeal[f.sede],
+    caes: anyDeal[f.caes],
+    fundae: anyDeal[f.fundae],
+    hotel_pernocta: anyDeal[f.hotel_pernocta], // ✅ usar hotel_pernocta, NO 'hotel_night'
+    deal_direction: anyDeal[f.deal_direction],
+    horas: anyDeal[f.horas],
   };
+}
 
-  const email = pickPrimary((person as any).email);
-  const phone = pickPrimary((person as any).phone);
+// Util: separa productos de formación vs. extras
+function splitTrainingVsExtras(products: any[]) {
+  const isTraining = (p: any) => {
+    // Pipedrive product on deal suele llegar como item con 'code' en p.product?.code o p.code según endpoint
+    const code: string | undefined = p?.product?.code ?? p?.code ?? '';
+    return typeof code === 'string' && code.toLowerCase().startsWith('form-');
+  };
+  const training = products.filter(isTraining);
+  const extras = products.filter((p: any) => !isTraining(p));
+  return { training, extras };
+}
 
-  const res = await dbi.execute(sql`
-    insert into persons (pipedrive_id, org_id, first_name, last_name, email, phone, created_at, updated_at)
-    values (${pipedriveId}, ${orgId}, ${firstName}, ${lastName}, ${email}, ${phone}, now(), now())
-    on conflict (pipedrive_id) do update
-      set org_id = excluded.org_id,
-          first_name = excluded.first_name,
-          last_name = excluded.last_name,
-          email = excluded.email,
-          phone = excluded.phone,
-          updated_at = now()
-    returning id
-  `);
-  return Number((res.rows as any[])[0].id);
-};
+// ====================================================================================
+// #region /deals
+// GET /deals?pipelineId=3&limit=...&start=...&status=open|won|lost|all_not_deleted
+// - Aplica pipeline_id=3 por defecto (sobrescribible con ?pipelineId=)
+// - Filtra productos de formación por code.startsWith("form-")
+// ====================================================================================
 
-const upsertDeal = async (
-  dbi: ReturnType<typeof requireDb>,
-  deal: Record<string, unknown>,
-  orgId: number | null,
-  personId: number | null,
-  products: any[]
-): Promise<number> => {
-  const pipedriveId = toOptionalNumber(deal.id);
-  const pipelineId = toOptionalNumber(deal.pipeline_id);
-  const hours = toOptionalNumber((deal as any)["38f11c8876ecde803a027fbf3c9041fda2ae7eb7"]); // hours
-  const deal_direction = toOptionalString((deal as any)["8b2a7570f5ba8aa4754f061cd9dc92fd778376a7"]); // dirección formación
-  const site = toOptionalString((deal as any)["676d6bd51e52999c582c01f67c99a35ed30bf6ae"]); // sede
-  const caes = toBool((deal as any)["e1971bf3a21d48737b682bf8d864ddc5eb15a351"]); // CAES
-  const fundae = toBool((deal as any)["245d60d4d18aec40ba888998ef92e5d00e494583"]); // FUNDAE
-  const hotel_night = toBool((deal as any)["c3a6daf8eb5b4e59c3c07cda8e01f43439101269"]); // Hotel y pernocta
-  const status = toOptionalString((deal as any).status) ?? toOptionalString((deal as any).stage_id)?.toString() ?? null;
-
-  // separar training vs extra por product.code contiene "form-"
-  const prodNames = (products ?? []).map((p: any) => ({
-    code: toOptionalString(p?.product?.code) ?? toOptionalString(p?.code) ?? "",
-    name: toOptionalString(p?.product?.name) ?? toOptionalString(p?.name) ?? "",
-    qty: toOptionalNumber(p?.quantity) ?? 0,
-  }));
-
-  const trainings = prodNames.filter(p => p.code && p.code.includes("form-")).map(p => p.name).filter(Boolean);
-  const extras = prodNames.filter(p => !p.code || !p.code.includes("form-")).map(p => p.name).filter(Boolean);
-
-  const training = trainings.join(", ");
-  const prod_extra = extras.join(", ");
-
-  const res = await dbi.execute(sql`
-    insert into deals (pipedrive_id, org_id, person_id, pipeline_id, training, prod_extra, hours, deal_direction, site, caes, fundae, hotel_night, status, created_at, updated_at)
-    values (${pipedriveId}, ${orgId}, ${personId}, ${pipelineId}, ${training}, ${prod_extra}, ${hours}, ${deal_direction}, ${site}, ${caes}, ${fundae}, ${hotel_night}, ${status}, now(), now())
-    on conflict (pipedrive_id) do update
-      set org_id = excluded.org_id,
-          person_id = excluded.person_id,
-          pipeline_id = excluded.pipeline_id,
-          training = excluded.training,
-          prod_extra = excluded.prod_extra,
-          hours = excluded.hours,
-          deal_direction = excluded.deal_direction,
-          site = excluded.site,
-          caes = excluded.caes,
-          fundae = excluded.fundae,
-          hotel_night = excluded.hotel_night,
-          status = excluded.status,
-          updated_at = now()
-    returning id
-  `);
-
-  return Number((res.rows as any[])[0].id);
-};
-
-// ───────────────────────────────── POST /deals/sync (trae PD y PERSISTE)
-app.post("/deals/sync", async (c) => {
+app.get('/deals', async (c) => {
   try {
-    const db = requireDb();
-
-    const payload = await c.req.json<{ dealId: number }>().catch(() => ({} as any));
-    const dealId = Number(payload?.dealId);
-    if (!Number.isFinite(dealId) || dealId <= 0) {
-      return c.json({ ok: false, error: "BAD_REQUEST", message: "Missing dealId" }, 400);
+    if (!PIPEDRIVE_API_TOKEN) {
+      return c.json({ error: 'PIPEDRIVE_API_TOKEN is not configured' }, 500);
     }
 
-    const baseUrl =
-      process.env.PIPEDRIVE_API_URL ??
-      process.env.PIPEDRIVE_API_BASE ??
-      process.env.PIPEDRIVE_BASE_URL ??
-      "https://api.pipedrive.com/v1";
-    const token = process.env.PIPEDRIVE_API_TOKEN;
-    if (!token) return c.json({ ok: false, error: "NO_TOKEN" }, 500);
+    const query = c.req.query();
+    const pipelineIdRaw = query.pipelineId ?? query.pipeline_id; // permitir ambas por compatibilidad
+    const pipeline_id = pipelineIdRaw !== undefined && pipelineIdRaw !== null ? Number(pipelineIdRaw) : 3; // ✅ default 3
+    const status = (query.status as string) || 'all_not_deleted';
+    const limit = Number(query.limit ?? 50);
+    const start = Number(query.start ?? 0);
+    const sort = (query.sort as string) || 'update_time DESC';
 
-    const q = (path: string) =>
-      `${baseUrl}${path}${path.includes("?") ? "&" : "?"}api_token=${token}`;
+    // 1) Traer deals con filtro de pipeline
+    const dealsRes = await fetchJSON<{
+      success: boolean;
+      data: any[];
+      additional_data?: { pagination?: { more_items_in_collection: boolean; start: number; limit: number; next_start?: number } };
+    }>(
+      pd('/deals', {
+        pipeline_id,
+        status,
+        limit,
+        start,
+        sort,
+      })
+    );
 
-    // deal
-    const dealRes = await fetch(q(`/deals/${dealId}`));
-    if (!dealRes.ok) throw new Error(`Pipedrive /deals/${dealId} ${dealRes.status}`);
-    const deal = (await dealRes.json())?.data ?? {};
+    const rawDeals = Array.isArray(dealsRes.data) ? dealsRes.data : [];
 
-    // org
-    const org =
-      deal?.org_id?.value
-        ? (await (await fetch(q(`/organizations/${deal.org_id.value}`))).json()).data
-        : null;
+    // 2) Para cada deal, traer productos y separarlos (formación vs extras)
+    const deals = await Promise.all(
+      rawDeals.map(async (deal) => {
+        // Productos del deal
+        const productsRes = await fetchJSON<{ success: boolean; data: any[] }>(
+          pd(`/deals/${deal.id}/products`, { limit: 500 })
+        );
+        const products = Array.isArray(productsRes.data) ? productsRes.data : [];
+        const { training, extras } = splitTrainingVsExtras(products);
 
-    // person
-    const person =
-      deal?.person_id?.value
-        ? (await (await fetch(q(`/persons/${deal.person_id.value}`))).json()).data
-        : null;
+        // Mapeo de campos custom (sin legacy 'site' ni 'hotel_night')
+        const mapped = mapDealCustomFields(deal);
 
-    // products
-    const prodsRes = await fetch(q(`/deals/${dealId}/products`));
-    const prodsJson = await prodsRes.json().catch(() => ({}));
-    const products = Array.isArray(prodsJson?.data) ? prodsJson.data : [];
+        return {
+          id: deal.id,
+          title: deal.title,
+          org_id: deal.org_id?.value ?? deal.org_id, // Pipedrive alterna según expansión
+          person_id: deal.person_id?.value ?? deal.person_id,
+          pipeline_id: deal.pipeline_id,
+          status: deal.status,
+          value: deal.value,
+          currency: deal.currency,
+          expected_close_date: deal.expected_close_date,
+          update_time: deal.update_time,
+          add_time: deal.add_time,
 
-    // UPSERTs
-    const orgId = org ? await upsertOrganization(db, org) : null;
-    const personId = person ? await upsertPerson(db, person, orgId) : null;
-    const localDealId = await upsertDeal(db, deal, orgId, personId, products);
+          // Campos custom normalizados
+          ...mapped,
 
-    return c.json({ ok: true, dealId: localDealId }, 201);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("POST /deals/sync FAIL:", message);
-    return c.json({ ok: false, error: "SYNC_FAIL", message }, 500);
+          // Productos
+          training_products: training,
+          extra_products: extras,
+        };
+      })
+    );
+
+    return c.json({
+      ok: true,
+      pipeline_id,
+      count: deals.length,
+      deals,
+      page: {
+        start,
+        limit,
+        more: dealsRes.additional_data?.pagination?.more_items_in_collection ?? false,
+        next_start: dealsRes.additional_data?.pagination?.next_start,
+      },
+    });
+  } catch (err: any) {
+    console.error('[GET /deals] error:', err);
+    return c.json({ ok: false, error: err?.message || String(err) }, 500);
   }
 });
 
-// ───────────────────────────────── ÚNICO handler de Netlify
-export const handler: Handler = async (event) => {
+// #endregion /deals
+
+// ====================================================================================
+// #region /notes
+// - GET /notes?dealId=123      -> lista notas de un deal
+// - POST /notes { dealId, content } -> crea nota en el deal
+// ====================================================================================
+
+app.get('/notes', async (c) => {
   try {
-    const scheme =
-      (event.headers["x-forwarded-proto"] as string) ||
-      (event.headers["X-Forwarded-Proto"] as string) ||
-      "https";
-    const host =
-      (event.headers["x-forwarded-host"] as string) ||
-      (event.headers["X-Forwarded-Host"] as string) ||
-      (event.headers.host as string) ||
-      "localhost";
-    const path = event.path || "/.netlify/functions/api";
-    const query = event.rawQuery
-      ? `?${event.rawQuery}`
-      : event.queryStringParameters
-      ? `?${new URLSearchParams(event.queryStringParameters as Record<string, string>).toString()}`
-      : "";
+    if (!PIPEDRIVE_API_TOKEN) {
+      return c.json({ error: 'PIPEDRIVE_API_TOKEN is not configured' }, 500);
+    }
+    const dealId = Number(c.req.query('dealId'));
+    if (!dealId) return c.json({ ok: false, error: 'dealId is required' }, 400);
 
-    const url = `${scheme}://${host}${path}${query}`;
+    const res = await fetchJSON<{ success: boolean; data: any[] }>(pd('/notes', { deal_id: dealId, limit: 500 }));
+    return c.json({ ok: true, notes: res.data ?? [] });
+  } catch (err: any) {
+    console.error('[GET /notes] error:', err);
+    return c.json({ ok: false, error: err?.message || String(err) }, 500);
+  }
+});
 
-    const req = new Request(url, {
-      method: event.httpMethod,
-      headers: event.headers as any,
-      body:
-        event.body && !["GET", "HEAD"].includes(event.httpMethod)
-          ? event.isBase64Encoded
-            ? Buffer.from(event.body, "base64")
-            : event.body
-          : undefined,
+app.post('/notes', async (c) => {
+  try {
+    if (!PIPEDRIVE_API_TOKEN) {
+      return c.json({ error: 'PIPEDRIVE_API_TOKEN is not configured' }, 500);
+    }
+    const body = await c.req.json<{ dealId?: number; content?: string }>();
+    const dealId = Number(body.dealId);
+    const content = (body.content || '').trim();
+    if (!dealId || !content) return c.json({ ok: false, error: 'dealId and content are required' }, 400);
+
+    const res = await fetchJSON<{ success: boolean; data: any }>(pd('/notes'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deal_id: dealId, content }),
     });
 
-    const res = await app.fetch(req);
-    const headers: Record<string, string> = {};
-    res.headers.forEach((v, k) => (headers[k] = v));
-    const body = await res.text();
-    return { statusCode: res.status, headers, body };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("DEALS API ERROR:", message);
-    return {
-      statusCode: 500,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error: "INTERNAL", message }),
-    };
+    return c.json({ ok: true, note: res.data });
+  } catch (err: any) {
+    console.error('[POST /notes] error:', err);
+    return c.json({ ok: false, error: err?.message || String(err) }, 500);
   }
-};
+});
+
+// #endregion /notes
+
+// ====================================================================================
+// #region /calendar/events
+// Mantiene la ruta. Aquí se deja lista para conectar con tu BBDD (Drizzle + Postgres/Neon)
+// Ejemplo minimal: GET /calendar/events?dealId=123&from=2025-09-01&to=2025-09-30
+// ====================================================================================
+
+app.get('/calendar/events', async (c) => {
+  try {
+    // Placeholder: devuelve estructura lista para integración con tu tabla Sessions
+    // Integra aquí tu consulta real (Drizzle) filtrando por dealId/fechas si procede.
+    const dealId = c.req.query('dealId') ? Number(c.req.query('dealId')) : undefined;
+    const from = c.req.query('from') || undefined;
+    const to = c.req.query('to') || undefined;
+
+    // TODO: sustituir por SELECT real a la tabla de sesiones/eventos:
+    // const events = await db.select().from(Sessions)...
+    const events: Array<{
+      id: string | number;
+      deal_id?: number;
+      title: string;
+      start: string; // ISO
+      end: string; // ISO
+      sede?: string;
+      address?: string;
+      trainer_ids?: number[];
+      unidad_movil_ids?: number[];
+      notes?: string;
+    }> = [];
+
+    return c.json({ ok: true, filters: { dealId, from, to }, events });
+  } catch (err: any) {
+    console.error('[GET /calendar/events] error:', err);
+    return c.json({ ok: false, error: err?.message || String(err) }, 500);
+  }
+});
+
+// #endregion /calendar/events
+
+export const handler = handle(app);
