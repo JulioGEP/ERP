@@ -38,20 +38,4 @@ const DealHeader: React.FC<DealHeaderProps> = ({ deal }) => {
   );
 };
 
-// 🔹 Ejemplo de uso directo dentro del mismo archivo
-const DealHeaderExample: React.FC = () => {
-  const sampleDeal = {
-    title: "Formación Bombero de Empresa",
-    orgName: "GEPCO Formación",
-    sede: "Madrid",
-    dealDirection: "Calle Mayor 123",
-    status: "Ganado",
-  };
-
-  return <DealHeader deal={sampleDeal} />;
-};
-
 export default DealHeader;
-
-// Si quieres ver el ejemplo renderizado, puedes exportar DealHeaderExample en vez de DealHeader:
-// export default DealHeaderExample;
