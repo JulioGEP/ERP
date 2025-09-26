@@ -309,6 +309,59 @@ const parseOptionalString = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const parseOptionalYesNo = (value: unknown): string | null => {
+  if (typeof value === 'boolean') {
+    return value ? 'si' : 'no';
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === 1) {
+      return 'si';
+    }
+
+    if (value === 0) {
+      return 'no';
+    }
+
+    return String(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    const normalized = trimmed.toLocaleLowerCase('es');
+
+    if (["1", "true", "yes", "si", "sí", "t"].includes(normalized)) {
+      return 'si';
+    }
+
+    if (["0", "false", "no", "f"].includes(normalized)) {
+      return 'no';
+    }
+
+    return trimmed;
+  }
+
+  return null;
+};
+
+const pickCandidateValue = (
+  candidate: Record<string, unknown>,
+  ...keys: string[]
+): unknown => {
+  for (const key of keys) {
+    if (key in candidate) {
+      return candidate[key];
+    }
+  }
+
+  return undefined;
+};
+
 const parseNumber = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
@@ -450,15 +503,17 @@ const sanitizeDealRecord = (value: unknown): DealRecord | null => {
   return {
     id: identifier,
     title: parseString(candidate.title),
-    clientId: parseOptionalNumber(candidate.clientId),
-    clientName: parseOptionalString(candidate.clientName),
-    sede: parseOptionalString(candidate.sede),
-    address: parseOptionalString(candidate.address),
-    caes: parseOptionalString(candidate.caes),
-    fundae: parseOptionalString(candidate.fundae),
-    hotelPernocta: parseOptionalString(candidate.hotelPernocta),
-    pipelineId: parseOptionalNumber(candidate.pipelineId),
-    pipelineName: parseOptionalString(candidate.pipelineName),
+    clientId: parseOptionalNumber(pickCandidateValue(candidate, 'clientId', 'client_id')),
+    clientName: parseOptionalString(pickCandidateValue(candidate, 'clientName', 'client_name')),
+    sede: parseOptionalString(pickCandidateValue(candidate, 'sede', 'site')),
+    address: parseOptionalString(pickCandidateValue(candidate, 'address', 'deal_direction')), 
+    caes: parseOptionalYesNo(pickCandidateValue(candidate, 'caes')),
+    fundae: parseOptionalYesNo(pickCandidateValue(candidate, 'fundae')),
+    hotelPernocta: parseOptionalYesNo(
+      pickCandidateValue(candidate, 'hotelPernocta', 'hotel_pernocta', 'hotel_night')
+    ),
+    pipelineId: parseOptionalNumber(pickCandidateValue(candidate, 'pipelineId', 'pipeline_id')),
+    pipelineName: parseOptionalString(pickCandidateValue(candidate, 'pipelineName', 'pipeline_name')),
     wonDate,
     formations: parseStringArray(candidate.formations),
     trainingProducts: parseDealProducts(candidate.trainingProducts),
