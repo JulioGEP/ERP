@@ -1435,7 +1435,12 @@ const extractSingleOptionFieldOptions = (
 
 const findSingleOptionFieldMap = (
   options: SingleOptionFieldOptions,
-  fieldId: string)
+  fieldId: string
+): Record<string, unknown> | null => {
+  // 👉 Aquí va la lógica que quieras hacer.
+  // Por ahora, puedes dejar un return básico si no sabes qué implementar:
+  return null;
+};
 
 const shouldUseCachedDealFieldOptions = (entry: DealFieldOptionsCacheEntry | null): boolean => {
   if (!entry) {
