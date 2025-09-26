@@ -1,17 +1,14 @@
+# netlify.toml
 [build]
-  command = "npm run build"
+  command = "vite build"
   publish = "dist"
 
-[build.environment]
-  NODE_VERSION = "20"
+[dev]
+  command = "vite"                # cómo arrancas el front en desarrollo
+  port = 5173                     # puerto Vite (Netlify lo proxifica en 8888)
+  targetPort = 5173
+  framework = "vite"
 
 [functions]
-  directory = "netlify/functions"
+  directory = "netlify/functions" # donde viven tus serverless functions
   node_bundler = "esbuild"
-
-[dev]
-framework = "#custom"
-# no lanzamos Vite desde Netlify; ya lo arranca solo
-targetPort = 5173
-port = 9999
-autoLaunch = false
