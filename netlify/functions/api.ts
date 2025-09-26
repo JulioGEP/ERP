@@ -598,95 +598,6 @@ const ensureDealStorageTables = async (): Promise<boolean> => {
   }
 };
 
-const sanitizeStoredDealRecord = (value: unknown): DealRecord | null => {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const record = value as Partial<DealRecord>;
-  const identifier = typeof record.id === "number" && Number.isFinite(record.id) ? record.id : null;
-
-  if (identifier === null) {
-    return null;
-  }
-
-  const toStringArray = (input: unknown): string[] => {
-    if (!Array.isArray(input)) {
-      return [];
-    }
-
-    return input.filter((item): item is string => typeof item === "string");
-  };
-
-  const toDealProductArray = (input: unknown): DealProduct[] => {
-    if (!Array.isArray(input)) {
-      return [];
-    }
-
-    return input.filter((item): item is DealProduct => {
-      if (!item || typeof item !== "object") {
-        return false;
-      }
-
-      const candidate = item as DealProduct;
-      return typeof candidate.dealProductId === "number" && typeof candidate.name === "string";
-    });
-  };
-
-  const toDealNoteArray = (input: unknown): DealNote[] => {
-    if (!Array.isArray(input)) {
-      return [];
-    }
-
-    return input.filter((item): item is DealNote => {
-      if (!item || typeof item !== "object") {
-        return false;
-      }
-
-      const candidate = item as DealNote;
-      return typeof candidate.id === "string" && typeof candidate.content === "string";
-    });
-  };
-
-  const toDealAttachmentArray = (input: unknown): DealAttachment[] => {
-    if (!Array.isArray(input)) {
-      return [];
-    }
-
-    return input.filter((item): item is DealAttachment => {
-      if (!item || typeof item !== "object") {
-        return false;
-      }
-
-      const candidate = item as DealAttachment;
-      return typeof candidate.id === "string" && typeof candidate.name === "string" && typeof candidate.url === "string";
-    });
-  };
-
-  return {
-    id: identifier,
-    title:
-      typeof record.title === "string" && record.title.trim().length > 0
-        ? record.title
-        : `Presupuesto #${identifier}`,
-    clientId: typeof record.clientId === "number" && Number.isFinite(record.clientId) ? record.clientId : null,
-    clientName: typeof record.clientName === "string" ? record.clientName : null,
-    sede: typeof record.sede === "string" ? record.sede : null,
-    address: typeof record.address === "string" ? record.address : null,
-    caes: typeof record.caes === "string" ? record.caes : null,
-    fundae: typeof record.fundae === "string" ? record.fundae : null,
-    hotelPernocta: typeof record.hotelPernocta === "string" ? record.hotelPernocta : null,
-    pipelineId:
-      typeof record.pipelineId === "number" && Number.isFinite(record.pipelineId) ? record.pipelineId : null,
-    pipelineName: typeof record.pipelineName === "string" ? record.pipelineName : null,
-    wonDate: typeof record.wonDate === "string" ? record.wonDate : null,
-    formations: toStringArray(record.formations),
-    trainingProducts: toDealProductArray(record.trainingProducts),
-    extraProducts: toDealProductArray(record.extraProducts),
-    notes: toDealNoteArray(record.notes),
-    attachments: toDealAttachmentArray(record.attachments)
-  } satisfies DealRecord;
-};
 
 type StoredDealRow = {
   dealId: number;
@@ -776,371 +687,6 @@ const loadDealsFromDatabase = async (
 
     const baseRows: StoredDealRow[] = [];
 
-    const parseNumeric = (value: unknown): number | null => {
-      if (typeof value === "number" && Number.isFinite(value)) {
-        return value;
-      }
-
-      if (typeof value === "string" && value.trim().length > 0) {
-        const parsed = Number.parseInt(value, 10);
-        return Number.isFinite(parsed) ? parsed : null;
-      }
-
-      if (typeof value === "bigint") {
-        return Number(value);
-      }
-
-      return null;
-    };
-
-    const parseString = (value: unknown): string | null => {
-      if (typeof value !== "string") {
-        return null;
-      }
-
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    };
-
-    const parseDate = (value: unknown): Date | null => {
-      if (value instanceof Date) {
-        return Number.isNaN(value.getTime()) ? null : value;
-      }
-
-      if (typeof value === "string") {
-        const timestamp = Date.parse(value);
-        return Number.isNaN(timestamp) ? null : new Date(timestamp);
-      }
-
-      return null;
-    };
-
-    (baseResult as Record<string, unknown>[]).forEach((row) => {
-      const dealId = parseNumeric(row.id);
-      if (dealId === null) {
-        return;
-      }
-      const pipelineId = parseNumeric(row.pipeline_id);
-      const pipelineName =
-        parseString(row.pipeline_name) ?? (pipelineId !== null ? PIPELINE_NAME[pipelineId] ?? null : null);
-
-      baseRows.push({
-        dealId,
-        title: `Presupuesto #${dealId}`,
-        clientId: parseNumeric(row.client_id),
-        clientName: parseString(row.client_name),
-        sede: parseString(row.sede),
-        address: parseString(row.address),
-        caes: parseString(row.caes),
-        fundae: parseString(row.fundae),
-        hotelPernocta: parseString(row.hotel_pernocta),
-        pipelineId,
-        pipelineName,
-        wonDate: null,
-        updatedAt: parseDate(row.updated_at)
-      });
-    });
-
-    if (baseRows.length === 0) {
-      return [];
-    }
-
-    const identifiers = baseRows
-      .map((row) => row.dealId)
-      .filter((value): value is number => typeof value === "number");
-
-    if (identifiers.length === 0) {
-      return [];
-    }
-
-    const builders = new Map<
-      number,
-      {
-        base: StoredDealRow;
-        formations: { value: string; position: number }[];
-        productContainers: Map<
-          number,
-          {
-            product: DealProduct;
-            position: number;
-            noteEntries: { note: DealNote; position: number }[];
-            attachmentEntries: { attachment: DealAttachment; position: number }[];
-          }
-        >;
-        trainingProducts: { product: DealProduct; position: number }[];
-        extraProducts: { product: DealProduct; position: number }[];
-        notes: { note: DealNote; position: number }[];
-        attachments: { attachment: DealAttachment; position: number }[];
-      }
-    >();
-
-    baseRows.forEach((row) => {
-      builders.set(row.dealId, {
-        base: row,
-        formations: [],
-        productContainers: new Map(),
-        trainingProducts: [],
-        extraProducts: [],
-        notes: [],
-        attachments: []
-      });
-    });
-
-    if (FEATURE_CREATE_DEAL_TABLES) {
-      const formationRows = await db
-        .select({
-          dealId: dealFormations.dealId,
-          value: dealFormations.value,
-          position: dealFormations.position
-        })
-        .from(dealFormations)
-        .where(inArray(dealFormations.dealId, identifiers))
-        .orderBy(dealFormations.dealId, dealFormations.position, dealFormations.id);
-
-      formationRows.forEach((row: StoredFormationRow) => {
-        if (typeof row.dealId !== "number" || typeof row.value !== "string") {
-          return;
-        }
-
-        const builder = builders.get(row.dealId);
-        if (!builder) {
-          return;
-        }
-
-        builder.formations.push({ value: row.value, position: row.position ?? 0 });
-      });
-
-      const productRows = await db
-        .select({
-          dealId: dealProducts.dealId,
-          dealProductId: dealProducts.dealProductId,
-          productId: dealProducts.productId,
-          name: dealProducts.name,
-          code: dealProducts.code,
-          quantity: dealProducts.quantity,
-          itemPrice: dealProducts.itemPrice,
-          recommendedHours: dealProducts.recommendedHours,
-          recommendedHoursRaw: dealProducts.recommendedHoursRaw,
-          isTraining: dealProducts.isTraining,
-          position: dealProducts.position
-        })
-        .from(dealProducts)
-        .where(inArray(dealProducts.dealId, identifiers))
-        .orderBy(dealProducts.dealId, dealProducts.position, dealProducts.dealProductId);
-
-      productRows.forEach((row: StoredProductRow) => {
-        if (typeof row.dealId !== "number" || typeof row.dealProductId !== "number") {
-          return;
-        }
-
-        const builder = builders.get(row.dealId);
-        if (!builder) {
-          return;
-        }
-
-        const product: DealProduct = {
-          dealProductId: row.dealProductId,
-          productId: row.productId ?? null,
-          name: row.name ?? `Producto ${row.dealProductId}`,
-          code: row.code ?? null,
-          quantity: typeof row.quantity === "number" && Number.isFinite(row.quantity) ? row.quantity : 0,
-          itemPrice: row.itemPrice ?? null,
-          recommendedHours: row.recommendedHours ?? null,
-          recommendedHoursRaw: row.recommendedHoursRaw ?? null,
-          notes: [],
-          attachments: [],
-          isTraining: Boolean(row.isTraining)
-        };
-
-        const container = {
-          product,
-          position: row.position ?? 0,
-          noteEntries: [] as { note: DealNote; position: number }[],
-          attachmentEntries: [] as { attachment: DealAttachment; position: number }[]
-        };
-
-        builder.productContainers.set(row.dealProductId, container);
-
-        if (product.isTraining) {
-          builder.trainingProducts.push({ product, position: container.position });
-        } else {
-          builder.extraProducts.push({ product, position: container.position });
-        }
-      });
-
-      const noteRows = await db
-        .select({
-          noteId: dealNotes.noteId,
-          dealId: dealNotes.dealId,
-          content: dealNotes.content,
-          createdAtText: dealNotes.createdAtText,
-          authorName: dealNotes.authorName,
-          source: dealNotes.source,
-          productId: dealNotes.productId,
-          dealProductId: dealNotes.dealProductId,
-          position: dealNotes.position,
-          productPosition: dealNotes.productPosition
-        })
-        .from(dealNotes)
-        .where(inArray(dealNotes.dealId, identifiers))
-        .orderBy(dealNotes.dealId, dealNotes.position, dealNotes.noteId);
-
-      noteRows.forEach((row: StoredNoteRow) => {
-        if (typeof row.dealId !== "number" || typeof row.noteId !== "string" || typeof row.content !== "string") {
-          return;
-        }
-
-        const builder = builders.get(row.dealId);
-        if (!builder) {
-          return;
-        }
-
-        const note: DealNote = {
-          id: row.noteId,
-          content: row.content,
-          createdAt: row.createdAtText ?? null,
-          authorName: row.authorName ?? null,
-          source: row.source === "product" || row.source === "local" ? row.source : "deal",
-          productId: row.productId ?? null,
-          dealProductId: row.dealProductId ?? null
-        };
-
-        builder.notes.push({ note, position: row.position ?? 0 });
-
-        if (typeof row.dealProductId === "number") {
-          const container = builder.productContainers.get(row.dealProductId);
-          if (container) {
-            container.noteEntries.push({ note, position: row.productPosition ?? row.position ?? 0 });
-          }
-        }
-      });
-
-      const attachmentRows = await db
-        .select({
-          attachmentId: dealAttachments.attachmentId,
-          dealId: dealAttachments.dealId,
-          name: dealAttachments.name,
-          url: dealAttachments.url,
-          downloadUrl: dealAttachments.downloadUrl,
-          fileType: dealAttachments.fileType,
-          addedAtText: dealAttachments.addedAtText,
-          addedBy: dealAttachments.addedBy,
-          source: dealAttachments.source,
-          productId: dealAttachments.productId,
-          dealProductId: dealAttachments.dealProductId,
-          position: dealAttachments.position,
-          productPosition: dealAttachments.productPosition
-        })
-        .from(dealAttachments)
-        .where(inArray(dealAttachments.dealId, identifiers))
-        .orderBy(dealAttachments.dealId, dealAttachments.position, dealAttachments.attachmentId);
-
-      attachmentRows.forEach((row: StoredAttachmentRow) => {
-        if (
-          typeof row.dealId !== "number" ||
-          typeof row.attachmentId !== "string" ||
-          typeof row.name !== "string" ||
-          typeof row.url !== "string"
-        ) {
-          return;
-        }
-
-        const builder = builders.get(row.dealId);
-        if (!builder) {
-          return;
-        }
-
-        const attachment: DealAttachment = {
-          id: row.attachmentId,
-          name: row.name,
-          url: row.url,
-          downloadUrl: row.downloadUrl ?? null,
-          fileType: row.fileType ?? null,
-          addedAt: row.addedAtText ?? null,
-          addedBy: row.addedBy ?? null,
-          source: row.source === "product" || row.source === "local" ? row.source : "deal",
-          productId: row.productId ?? null,
-          dealProductId: row.dealProductId ?? null
-        };
-
-        builder.attachments.push({ attachment, position: row.position ?? 0 });
-
-        if (typeof row.dealProductId === "number") {
-          const container = builder.productContainers.get(row.dealProductId);
-          if (container) {
-            container.attachmentEntries.push({ attachment, position: row.productPosition ?? row.position ?? 0 });
-          }
-        }
-      });
-    }
-
-    const results: DealRecord[] = [];
-
-    baseRows.forEach((row) => {
-      const builder = builders.get(row.dealId);
-      if (!builder) {
-        return;
-      }
-
-      const formations = builder.formations
-        .sort((a, b) => a.position - b.position)
-        .map((entry) => entry.value)
-        .filter((value): value is string => typeof value === "string");
-
-      builder.productContainers.forEach((container) => {
-        container.noteEntries.sort((a, b) => a.position - b.position);
-        container.product.notes = container.noteEntries.map((entry) => entry.note);
-
-        container.attachmentEntries.sort((a, b) => a.position - b.position);
-        container.product.attachments = container.attachmentEntries.map((entry) => entry.attachment);
-      });
-
-      const trainingProducts = builder.trainingProducts
-        .sort((a, b) => a.position - b.position)
-        .map((entry) => entry.product);
-
-      const extraProducts = builder.extraProducts
-        .sort((a, b) => a.position - b.position)
-        .map((entry) => entry.product);
-
-      const notes = builder.notes
-        .sort((a, b) => a.position - b.position)
-        .map((entry) => entry.note);
-
-      const attachments = builder.attachments
-        .sort((a, b) => a.position - b.position)
-        .map((entry) => entry.attachment);
-
-      const record: DealRecord = {
-        id: row.dealId,
-        title: row.title,
-        clientId: row.clientId ?? null,
-        clientName: row.clientName ?? null,
-        sede: row.sede ?? null,
-        address: row.address ?? null,
-        caes: row.caes ?? null,
-        fundae: row.fundae ?? null,
-        hotelPernocta: row.hotelPernocta ?? null,
-        pipelineId: row.pipelineId ?? null,
-        pipelineName: row.pipelineName ?? null,
-        wonDate: row.wonDate ?? null,
-        formations,
-        trainingProducts,
-        extraProducts,
-        notes,
-        attachments
-      };
-
-      results.push(record);
-    });
-
-    return results;
-  } catch (error) {
-    const message = "No se pudieron leer los presupuestos desde la base de datos.";
-    console.error(message, error);
-    throw new DatabaseError(message);
-  }
-};
 const readStoredDeal = async (dealId: number): Promise<DealRecord | null> => {
   if (!Number.isFinite(dealId)) {
     return null;
@@ -1441,18 +987,6 @@ const saveDealRecord = async (deal: DealRecord): Promise<void> => {
   }
 };
 
-const extractDealIdentifier = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-};
 
 const removeDealReferencesFromSharedState = async (dealId: number): Promise<void> => {
   const manualDeals = await readSharedState<unknown[]>(
@@ -1626,62 +1160,11 @@ const sanitizeSharedExtras = (value: unknown): SharedExtrasPayload => {
   return { notes, documents };
 };
 
-const toOptionalString = (value: unknown): string | null => {
-  if (typeof value !== "string") {
-    return null;
-  }
 
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const toOptionalUrl = (value: unknown): string | null => {
-  const text = toOptionalString(value);
-  if (!text) {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(text);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed.toString();
-    }
-  } catch {
-    if (text.startsWith("//")) {
-      try {
-        const parsed = new URL(`https:${text}`);
-        return parsed.toString();
-      } catch {
-        return null;
-      }
-    }
-
-    return null;
-  }
-
-  return null;
-};
 
 const toStringWithFallback = (value: unknown, fallback: string): string =>
   toOptionalString(value) ?? fallback;
 
-const toOptionalNumber = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) {
-      return null;
-    }
-
-    const parsed = Number.parseInt(trimmed, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-};
 
 const normaliseRelatedEntity = (value: unknown): RelatedEntity => {
   if (value === null || value === undefined) {
@@ -1712,14 +1195,6 @@ const normaliseRelatedEntity = (value: unknown): RelatedEntity => {
   return { id: null, name: null, address: null };
 };
 
-const readNestedString = (value: unknown, key: string): string | null => {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-  return toOptionalString(record[key]);
-};
 
 const normaliseComparisonText = (value: string): string =>
   value
@@ -1961,27 +1436,6 @@ const extractSingleOptionFieldOptions = (
 const findSingleOptionFieldMap = (
   options: SingleOptionFieldOptions,
   fieldId: string
-): Record<string, string> | null => {
-  if (typeof fieldId !== "string") {
-    return null;
-  }
-
-  const direct = options[fieldId];
-
-  if (direct) {
-    return direct;
-  }
-
-  const trimmed = fieldId.trim();
-
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  return (
-    options[trimmed] ?? options[normaliseComparisonText(trimmed)] ?? null
-  );
-};
 
 const shouldUseCachedDealFieldOptions = (entry: DealFieldOptionsCacheEntry | null): boolean => {
   if (!entry) {
@@ -2116,109 +1570,10 @@ const resolveSingleOptionFieldValue = (
   value: string | null,
   fieldId: string,
   options: SingleOptionFieldOptions
-): string | null => {
-  if (typeof value !== "string") {
-    return null;
-  }
 
-  const trimmed = value.trim();
 
-  if (trimmed.length === 0) {
-    return null;
-  }
 
-  const fieldOptions = findSingleOptionFieldMap(options, fieldId);
 
-  if (!fieldOptions) {
-    return trimmed;
-  }
-
-  const normalized = normaliseComparisonText(trimmed);
-  return fieldOptions[trimmed] ?? fieldOptions[normalized] ?? trimmed;
-};
-
-const mapSingleOptionBooleanValue = (value: string | null): string | null => {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = normaliseComparisonText(value);
-
-  if (normalized.length === 0) {
-    return null;
-  }
-
-  if (BOOLEAN_SINGLE_OPTION_TRUE_VALUES.has(normalized)) {
-    return "Sí";
-  }
-
-  if (BOOLEAN_SINGLE_OPTION_FALSE_VALUES.has(normalized)) {
-    return "No";
-  }
-
-  return value;
-};
-
-const mapSedeValue = (value: string | null): string | null => {
-  if (!value) {
-    return null;
-  }
-
-  const normalized = normaliseComparisonText(value);
-
-  if (normalized.length === 0) {
-    return null;
-  }
-
-  return SINGLE_OPTION_SEDE_MAPPING[normalized] ?? value;
-};
-
-const toOptionalText = (value: unknown): string | null => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
-  }
-
-  return null;
-};
-
-const toOptionalBoolean = (value: unknown): boolean | null => {
-  if (typeof value === "boolean") {
-    return value;
-  }
-
-  if (typeof value === "number") {
-    if (value === 1) {
-      return true;
-    }
-
-    if (value === 0) {
-      return false;
-    }
-  }
-
-  if (typeof value === "string") {
-    const normalized = normaliseComparisonText(value);
-
-    if (normalized.length === 0) {
-      return null;
-    }
-
-    if (["1", "true", "t", "yes", "y", "si", "s", "on"].includes(normalized)) {
-      return true;
-    }
-
-    if (["0", "false", "f", "no", "n", "off"].includes(normalized)) {
-      return false;
-    }
-  }
-
-  return null;
-};
 
 const normaliseArray = (value: unknown): unknown[] => {
   if (Array.isArray(value)) {
@@ -2309,32 +1664,6 @@ const toStringList = (value: unknown): string[] => {
   return Array.from(set);
 };
 
-const toOptionalFieldText = (value: unknown): string | null => {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  if (Array.isArray(value)) {
-    const parts = toStringList(value);
-    if (parts.length === 0) {
-      return null;
-    }
-
-    return parts.join(", ");
-  }
-
-  const direct = toOptionalText(value);
-  if (direct) {
-    return direct;
-  }
-
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return readFieldRecordText(record);
-  }
-
-  return null;
-};
 
 const pushUniqueNote = (collection: DealNote[], note: DealNote) => {
   if (!collection.some((existing) => existing.id === note.id)) {
@@ -2612,34 +1941,6 @@ const parsePipedriveNotes = (
   return result;
 };
 
-const resolveDealIdFromRecord = (record: Record<string, unknown>): number | null => {
-  const dealIdPaths = [
-    "deal_id",
-    "dealId",
-    "deal.id",
-    "dealId.value",
-    "deal_id.value",
-    "item.deal_id",
-    "item.dealId",
-    "data.deal_id",
-    "data.dealId",
-    "related_object.deal_id",
-    "related_object.dealId",
-    "relatedObjects.deal_id",
-    "relatedObjects.dealId"
-  ];
-
-  for (const path of dealIdPaths) {
-    const candidate = readValueByPath(record, path);
-    const parsed = toOptionalNumber(candidate);
-    if (parsed !== null) {
-      return parsed;
-    }
-  }
-
-  return null;
-};
-
 const parsePipedriveAttachments = (
   value: unknown,
   source: "deal" | "product",
@@ -2799,7 +2100,8 @@ const parseDealProducts = (
   attachmentAccumulator: DealAttachment[]
 ): DealProduct[] => {
   let fallbackCounter = 1;
-  const generateFallbackId = () => -fallbackCounter++;
+  const generateFallbackId = () => -(fallbackCounter++);
+
 
   const productSources: { value: unknown }[] = [
     { value: deal["products"] },
@@ -3440,7 +2742,7 @@ const synchronizeDealsFromPipedrive = async (
 const app = new Hono().basePath("/.netlify/functions/api");
 app.use("*", cors());
 
-app.post("/db-smoke", async (c) => {
+app.post("/deals/sync", async (c) => {
   try {
     if (!db) throw new Error("DATABASE_URL missing");
     const rs = await db.execute(sql`
@@ -3451,10 +2753,10 @@ app.post("/db-smoke", async (c) => {
       RETURNING id
     `);
     const id = (rs.rows as any[])[0]?.id ?? null;
-    return c.json({ ok: true, id });
+    return c.json({ ok: true, id }, 201);
   } catch (e: any) {
-    console.error("DB-SMOKE FAIL", e);
-    return c.json({ ok: false, error: String(e?.message ?? e) }, 500);
+    console.error("SYNC DEAL FAIL", e);
+    return c.json({ ok: false, error: "SYNC_FAIL", message: e?.message ?? "Internal" }, 500);
   }
 });
 
@@ -3927,35 +3229,65 @@ app.delete("/deals", async (c) => {
   return c.json({ ok: true, dealId, removedAt: new Date().toISOString() });
 });
 
-// Handler manual (evita el adapter y problemas de path)
-export const handler: Handler = async (event) => {
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import type { Handler } from "@netlify/functions";
+import { sql } from "drizzle-orm";
+
+// OJO: debe existir tu `db` inicializado antes de esto
+
+// Una única instancia de Hono con basePath al runtime de Netlify
+const app = new Hono().basePath("/.netlify/functions/api");
+app.use("*", cors());
+
+// POST /.netlify/functions/api/deals/sync
+app.post("/deals/sync", async (c) => {
   try {
-    const host = event.headers["x-forwarded-host"] || event.headers["host"] || "localhost";
-    const scheme = event.headers["x-forwarded-proto"] || "http";
-    const path = event.path || "/.netlify/functions/api";
-    const query = event.rawQuery
-      ? `?${event.rawQuery}`
-      : event.queryStringParameters
-      ? `?${new URLSearchParams(event.queryStringParameters as Record<string, string>).toString()}`
-      : "";
-    const url = `${scheme}://${host}${path}${query}`;
+    if (!db) throw new Error("DATABASE_URL missing");
 
-    const req = new Request(url, {
-      method: event.httpMethod,
-      headers: event.headers as any,
-      body:
-        event.body && !["GET", "HEAD"].includes(event.httpMethod)
-          ? event.isBase64Encoded
-            ? Buffer.from(event.body, "base64")
-            : event.body
-          : undefined
-    });
+    // 🚬 Smoke persistente (cámbialo por tu lógica de upsert real)
+    const rs = await db.execute(sql`
+      INSERT INTO organizations (pipedrive_id, name, cif, phone, address, created_at, updated_at)
+      VALUES (999999999, 'SMOKE ORG', 'B00000000', '+34 600 000 000', 'C/ Prueba 123', now(), now())
+      ON CONFLICT (pipedrive_id) DO UPDATE
+      SET name = EXCLUDED.name, updated_at = now()
+      RETURNING id
+    `);
 
-    const res = await app.fetch(req);
-    const headers: Record<string, string> = {};
-    res.headers.forEach((v, k) => (headers[k] = v));
-    const body = await res.text();
-    return { statusCode: res.status, headers, body };
+    const id = (rs.rows as any[])[0]?.id ?? null;
+    return c.json({ ok: true, id }, 201);
+  } catch (e: any) {
+    console.error("SYNC DEAL FAIL", e);
+    return c.json({ ok: false, error: "SYNC_FAIL", message: e?.message ?? "Internal" }, 500);
+  }
+});
+
+// Export único del handler, delegando en Hono
+export const handler: Handler = async (event) => {
+  const scheme = event.headers["x-forwarded-proto"] || "https";
+  const host = event.headers["x-forwarded-host"] || event.headers.host || "localhost";
+  const path = event.path || "/.netlify/functions/api";
+  const query = event.rawQuery ? `?${event.rawQuery}` : "";
+  const url = `${scheme}://${host}${path}${query}`;
+
+  const req = new Request(url, {
+    method: event.httpMethod,
+    headers: event.headers as any,
+    body:
+      event.body && !["GET", "HEAD"].includes(event.httpMethod)
+        ? event.isBase64Encoded
+          ? Buffer.from(event.body, "base64")
+          : event.body
+        : undefined,
+  });
+
+  const res = await app.fetch(req);
+  const headers: Record<string, string> = {};
+  res.headers.forEach((v, k) => (headers[k] = v));
+  const body = await res.text();
+  return { statusCode: res.status, headers, body };
+};
+
   } catch (error) {
     const message =
       error instanceof Error && typeof error.message === "string" && error.message.trim().length > 0
