@@ -1575,10 +1575,12 @@ const resolveSingleOptionFieldValue = (
   value: string | null,
   fieldId: string,
   options: SingleOptionFieldOptions
-
-
-
-
+): string | null => {
+  // 👉 Aquí iría tu lógica real para resolver el valor.
+  // De momento puedes dejar algo simple para que compile:
+  if (!value) return null;
+  return value;
+};
 
 const normaliseArray = (value: unknown): unknown[] => {
   if (Array.isArray(value)) {
@@ -1599,6 +1601,27 @@ const normaliseArray = (value: unknown): unknown[] => {
 
   return [];
 };
+
+// --- Utils (defínelas una sola vez, encima de ensureId) ---
+const toOptionalText = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const t = String(value).trim();
+  return t.length > 0 ? t : null;
+};
+
+const toOptionalString = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const t = String(value).trim();
+  return t.length > 0 ? t : null;
+};
+
+const toOptionalNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+// --- Fin utils ---
+
 
 const ensureId = (value: unknown, prefix: string, index: number): string => {
   const text = toOptionalText(value);
@@ -3234,13 +3257,7 @@ app.delete("/deals", async (c) => {
   return c.json({ ok: true, dealId, removedAt: new Date().toISOString() });
 });
 
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import type { Handler } from "@netlify/functions";
-import { sql } from "drizzle-orm";
-
 // OJO: debe existir tu `db` inicializado antes de esto
-
 // Una única instancia de Hono con basePath al runtime de Netlify
 const app = new Hono().basePath("/.netlify/functions/api");
 app.use("*", cors());
