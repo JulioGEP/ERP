@@ -1435,7 +1435,7 @@ const extractSingleOptionFieldOptions = (
 
 const findSingleOptionFieldMap = (
   options: SingleOptionFieldOptions,
-  fieldId: string
+  fieldId: string)
 
 const shouldUseCachedDealFieldOptions = (entry: DealFieldOptionsCacheEntry | null): boolean => {
   if (!entry) {
