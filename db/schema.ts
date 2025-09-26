@@ -1,90 +1,120 @@
+// db/schema.ts
 import {
-  boolean,
-  doublePrecision,
-  integer,
-  jsonb,
   pgTable,
-  serial,
   text,
+  bigint,
+  boolean,
+  integer,
   timestamp,
-  varchar,
-  bigint
+  serial,
+  jsonb,
+  uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 
-export const deals = pgTable("deals", {
+// ========== ORGANIZATIONS ==========
+export const organizations = pgTable("organizations", {
   id: bigint("id", { mode: "number" }).primaryKey(),
-  title: text("title").notNull(),
-  clientId: integer("client_id"),
-  clientName: text("client_name"),
-  sede: text("sede"),
+  name: text("name").notNull(),
   address: text("address"),
-  caes: text("caes"),
-  fundae: text("fundae"),
-  hotelPernocta: text("hotel_pernocta"),
-  pipelineId: integer("pipeline_id"),
-  pipelineName: text("pipeline_name"),
-  wonDate: text("won_date"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
 });
 
-export const dealFormations = pgTable("deal_formations", {
+// ========== PERSONS ==========
+export const persons = pgTable("persons", {
+  id: bigint("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  orgId: bigint("org_id", { mode: "number" }).references(() => organizations.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========== DEALS (PRESUPUESTOS / CURSOS) ==========
+export const deals = pgTable(
+  "deals",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey(),
+    pipedriveId: bigint("pipedrive_id", { mode: "number" }).notNull(),
+    title: text("title").notNull(),
+    pipelineId: integer("pipeline_id").notNull(),
+    status: text("status"),
+    orgId: bigint("org_id", { mode: "number" }).references(() => organizations.id),
+    personId: bigint("person_id", { mode: "number" }).references(() => persons.id),
+
+    // 🔄 Campos normalizados
+    sede: text("sede"),
+    dealDirection: text("deal_direction"),
+    caes: boolean("caes"),
+    fundae: boolean("fundae"),
+    hotelPernocta: boolean("hotel_pernocta"),
+
+    // Timestamps
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    idxPipeline: index("idx_deals_pipeline").on(table.pipelineId),
+    idxUpdated: index("idx_deals_updated_at").on(table.updatedAt),
+    uniqPipedrive: uniqueIndex("uniq_deals_pipedrive").on(table.pipedriveId),
+  })
+);
+
+// ========== PRODUCTS ==========
+export const products = pgTable("products", {
+  id: bigint("id", { mode: "number" }).primaryKey(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  price: integer("price"),
+  dealId: bigint("deal_id", { mode: "number" }).references(() => deals.id),
+
+  // Nuevo flag: producto de formación
+  isTraining: boolean("is_training").default(false),
+
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========== NOTES ==========
+export const notes = pgTable("notes", {
   id: serial("id").primaryKey(),
-  dealId: bigint("deal_id", { mode: "number" }).references(() => deals.id, { onDelete: "cascade" }),
-  value: text("value").notNull(),
-  position: integer("position").notNull().default(0),
-  createdAt: timestamp("created_at").defaultNow()
-});
-
-export const dealProducts = pgTable("deal_products", {
-  dealProductId: integer("deal_product_id").primaryKey(),
-  dealId: bigint("deal_id", { mode: "number" }).references(() => deals.id, { onDelete: "cascade" }),
-  productId: integer("product_id"),
-  name: text("name").notNull(),
-  code: text("code"),
-  quantity: doublePrecision("quantity"),
-  itemPrice: doublePrecision("item_price"),
-  recommendedHours: doublePrecision("recommended_hours"),
-  recommendedHoursRaw: text("recommended_hours_raw"),
-  isTraining: boolean("is_training").notNull().default(false),
-  position: integer("position").notNull().default(0),
+  dealId: bigint("deal_id", { mode: "number" }).references(() => deals.id),
+  content: text("content"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
 });
 
-export const dealNotes = pgTable("deal_notes", {
-  noteId: varchar("note_id", { length: 255 }).primaryKey(),
-  dealId: bigint("deal_id", { mode: "number" }).references(() => deals.id, { onDelete: "cascade" }),
-  content: text("content").notNull(),
-  createdAtText: text("created_at_text"),
-  authorName: text("author_name"),
-  source: varchar("source", { length: 32 }).notNull().default("deal"),
-  productId: integer("product_id"),
-  dealProductId: integer("deal_product_id"),
-  position: integer("position").notNull().default(0),
-  productPosition: integer("product_position"),
-  createdAt: timestamp("created_at").defaultNow()
+// ========== DOCUMENTS ==========
+export const documents = pgTable("documents", {
+  id: serial("id").primaryKey(),
+  dealId: bigint("deal_id", { mode: "number" }).references(() => deals.id),
+  name: text("name"),
+  url: text("url"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const dealAttachments = pgTable("deal_attachments", {
-  attachmentId: varchar("attachment_id", { length: 255 }).primaryKey(),
-  dealId: bigint("deal_id", { mode: "number" }).references(() => deals.id, { onDelete: "cascade" }),
+// ========== SESSIONS (FORMACIONES PLANIFICADAS) ==========
+export const sessions = pgTable("sessions", {
+  id: serial("id").primaryKey(),
+  dealId: bigint("deal_id", { mode: "number" }).references(() => deals.id),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  trainerId: bigint("trainer_id", { mode: "number" }),
+  location: text("location"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========== TRAINERS ==========
+export const trainers = pgTable("trainers", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  url: text("url").notNull(),
-  downloadUrl: text("download_url"),
-  fileType: text("file_type"),
-  addedAtText: text("added_at_text"),
-  addedBy: text("added_by"),
-  source: varchar("source", { length: 32 }).notNull().default("deal"),
-  productId: integer("product_id"),
-  dealProductId: integer("deal_product_id"),
-  position: integer("position").notNull().default(0),
-  productPosition: integer("product_position"),
-  createdAt: timestamp("created_at").defaultNow()
+  email: text("email"),
+  phone: text("phone"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const sharedState = pgTable("shared_state", {
-  key: varchar("key", { length: 128 }).primaryKey(),
-  value: jsonb("value").notNull(),
-  updatedAt: timestamp("updated_at").defaultNow()
+// ========== UNIDADES MÓVILES ==========
+export const unidadesMoviles = pgTable("unidades_moviles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
