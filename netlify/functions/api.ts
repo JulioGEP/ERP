@@ -2766,10 +2766,7 @@ const synchronizeDealsFromPipedrive = async (
     console.error("La sincronización de deals con Pipedrive falló", error);
   }
 };
-
-const app = new Hono().basePath("/.netlify/functions/api");
-app.use("*", cors());
-
+ 
 app.post("/deals/sync", async (c) => {
   try {
     if (!db) throw new Error("DATABASE_URL missing");
@@ -3284,25 +3281,6 @@ app.post("/deals/sync", async (c) => {
   }
 });
 
-// Export único del handler, delegando en Hono
-export const handler: Handler = async (event) => {
-  const scheme = event.headers["x-forwarded-proto"] || "https";
-  const host = event.headers["x-forwarded-host"] || event.headers.host || "localhost";
-  const path = event.path || "/.netlify/functions/api";
-  const query = event.rawQuery ? `?${event.rawQuery}` : "";
-  const url = `${scheme}://${host}${path}${query}`;
-
-  const req = new Request(url, {
-    method: event.httpMethod,
-    headers: event.headers as any,
-    body:
-      event.body && !["GET", "HEAD"].includes(event.httpMethod)
-        ? event.isBase64Encoded
-          ? Buffer.from(event.body, "base64")
-          : event.body
-        : undefined,
-  });
-
   const res = await app.fetch(req);
   const headers: Record<string, string> = {};
   res.headers.forEach((v, k) => (headers[k] = v));
@@ -3324,6 +3302,57 @@ export const handler: Handler = async (event) => {
       statusCode: 500,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ error: "DB_ERROR", message })
+    };
+  }
+};
+
+// --- ÚNICO handler de Netlify, al final del archivo ---
+export const handler: Handler = async (event) => {
+  try {
+    const scheme =
+      (event.headers["x-forwarded-proto"] as string) ||
+      (event.headers["X-Forwarded-Proto"] as string) ||
+      "https";
+    const host =
+      (event.headers["x-forwarded-host"] as string) ||
+      (event.headers["X-Forwarded-Host"] as string) ||
+      (event.headers.host as string) ||
+      "localhost";
+    const path = event.path || "/.netlify/functions/api";
+    const query = event.rawQuery
+      ? `?${event.rawQuery}`
+      : event.queryStringParameters
+      ? `?${new URLSearchParams(
+          event.queryStringParameters as Record<string, string>
+        ).toString()}`
+      : "";
+
+    const url = `${scheme}://${host}${path}${query}`;
+
+    const req = new Request(url, {
+      method: event.httpMethod,
+      headers: event.headers as any,
+      body:
+        event.body && !["GET", "HEAD"].includes(event.httpMethod)
+          ? event.isBase64Encoded
+            ? Buffer.from(event.body, "base64")
+            : event.body
+          : undefined,
+    });
+
+    const res = await app.fetch(req);
+
+    const headers: Record<string, string> = {};
+    res.headers.forEach((v, k) => (headers[k] = v));
+    const body = await res.text();
+
+    return { statusCode: res.status, headers, body };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      statusCode: 500,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ error: "INTERNAL", message }),
     };
   }
 };
