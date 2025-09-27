@@ -1,23 +1,14 @@
 // src/shared/pipedriveFields.ts
+// Mapa centralizado de IDs de campos custom de Pipedrive.
+// Sustituye los valores por los IDs REALES de tu Pipedrive cuando quieras mapearlos exactamente.
 
-/**
- * Campos personalizados de Pipedrive que usamos en los deals.
- * Se centralizan aquí para evitar duplicar "magic strings".
- */
-export const DEAL_CF = {
-  sede: "676d6bd51e52999c582c01f67c99a35ed30bf6ae",
-  caes: "e1971bf3a21d48737b682bf8d864ddc5eb15a351",
-  fundae: "245d60d4d18aec40ba888998ef92e5d00e494583",
-  hotelPernocta: "c3a6daf8eb5b4e59c3c07cda8e01f43439101269",
-  dealDirection: "8b2a7570f5ba8aa4754f061cd9dc92fd778376a7",
-  horas: "38f11c8876ecde803a027fbf3c9041fda2ae7eb7",
-} as const;
+export const PIPEDRIVE_FIELDS = {
+  // ejemplo de IDs reales (pon los tuyos):
+  SEDE: 'custom_field_id_for_sede',                 // p.ej. "676d6bd51e52999c582c01f67c99a35ed30b12345"
+  CAES: 'custom_field_id_for_caes',                 // p.ej. "e1971bf3a21d48737b682bf8d864ddc5eb15a351"
+  FUNDAE: 'custom_field_id_for_fundae',             // p.ej. "245d60d4d18aec40ba888998ef92e5d00e494583"
+  HOTEL_PERNOCTA: 'custom_field_id_for_hotel',      // p.ej. "c3a6daf8eb5b4e59c3c07cda8e01f43439101269"
+} as const
 
-// Helper para obtener el valor de un campo personalizado desde un deal de Pipedrive
-export function getCF<T = string>(
-  deal: any,
-  fieldKey: string
-): T | null {
-  if (!deal || !deal.custom_fields) return null;
-  return (deal.custom_fields[fieldKey] as T) ?? null;
-}
+export type PipedriveFieldKey = keyof typeof PIPEDRIVE_FIELDS
+export type PipedriveFieldId = typeof PIPEDRIVE_FIELDS[PipedriveFieldKey]

@@ -15,7 +15,6 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
-
   },
   "dependencies": {
     "@fullcalendar/core": "6.1.19",
@@ -47,6 +46,7 @@
     "eslint-plugin-react": "^7.35.0",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.7",
+    "netlify-cli": "^23.8.0",
     "sass": "^1.77.6",
     "typescript": "^5.5.3",
     "vite": "^5.3.4"

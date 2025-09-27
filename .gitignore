@@ -6,3 +6,12 @@ tsconfig.tsbuildinfo
 .env
 .env.*
 .netlify
+
+# Env files
+.env
+.env.*
+/env
+
+# Builds
+.netlify
+dist
