@@ -1,41 +1,15 @@
-// src/components/deals/DealHeader.tsx
-import React from "react";
-import { Card, ListGroup } from "react-bootstrap";
+import { DealRecord } from '../../services/deals'
 
-export interface DealHeaderProps {
-  deal: {
-    title: string;
-    orgName: string;
-    sede: string;
-    dealDirection: string;
-    status: string;
-  };
-}
+type Props = { deal: DealRecord }
 
-const DealHeader: React.FC<DealHeaderProps> = ({ deal }) => {
+export function DealHeader({ deal }: Props) {
   return (
-    <Card className="mb-3 shadow-sm">
-      <Card.Header as="h5">{deal.title}</Card.Header>
-      <ListGroup variant="flush">
-        <ListGroup.Item>
-          <strong>Cliente: </strong>
-          {deal.orgName}
-        </ListGroup.Item>
-        <ListGroup.Item>
-          <strong>Sede: </strong>
-          {deal.sede}
-        </ListGroup.Item>
-        <ListGroup.Item>
-          <strong>Dirección: </strong>
-          {deal.dealDirection}
-        </ListGroup.Item>
-        <ListGroup.Item>
-          <strong>Estado: </strong>
-          {deal.status}
-        </ListGroup.Item>
-      </ListGroup>
-    </Card>
-  );
-};
-
-export default DealHeader;
+    <div className="deal-header mb-3">
+      <h2>{deal.title}</h2>
+      <p className="text-muted">Sede: {deal.sede ?? '—'}</p>
+      {deal.hotel_pernocta && <span className="badge bg-info me-1">Hotel incluido</span>}
+      {deal.fundae && <span className="badge bg-success me-1">FUNDAE</span>}
+      {deal.caes && <span className="badge bg-warning text-dark">CAES</span>}
+    </div>
+  )
+}
