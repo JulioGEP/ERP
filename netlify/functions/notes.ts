@@ -1,40 +1,18 @@
-// netlify/functions/notes.ts
-import { Hono } from 'hono';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import pkg from 'pg';
-const { Pool } = pkg;
+import { Hono } from 'hono'
+import { getNotesByDealId } from '../../src/services/notes'
 
-import { eq } from 'drizzle-orm';
-import { notes } from '../../db/schema';
+const app = new Hono()
 
-const router = new Hono();
+app.get('/', async (c) => {
+  const dealId = c.req.query('dealId')
+  if (!dealId) return c.json({ error: 'Missing dealId' }, 400)
 
-function getDb() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  return drizzle(pool);
-}
+  try {
+    const notes = await getNotesByDealId(dealId)
+    return c.json(notes)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
 
-// GET /api/notes?dealId=123
-router.get('/', async (c) => {
-  const db = getDb();
-  const dealId = Number(c.req.query('dealId'));
-  if (!dealId) return c.json({ error: 'dealId is required' }, 400);
-
-  const list = await db.select().from(notes).where(eq(notes.dealId, dealId)).orderBy(notes.createdAt);
-  return c.json(list);
-});
-
-// POST /api/notes { dealId, content }
-router.post('/', async (c) => {
-  const db = getDb();
-  const body = await c.req.json().catch(() => ({}));
-
-  const dealId = Number(body?.dealId);
-  const content = (body?.content ?? '').toString().trim();
-  if (!dealId || !content) return c.json({ error: 'dealId and content are required' }, 400);
-
-  const inserted = await db.insert(notes).values({ dealId, content }).returning();
-  return c.json(inserted[0]);
-});
-
-export default router;
+export default app
