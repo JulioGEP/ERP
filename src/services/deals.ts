@@ -2,8 +2,6 @@
 // Servicios tipados para consumir la API interna /api/deals
 // Reemplaza el shim anterior y usa tipos estrictos
 
-import { PIPEDRIVE_FIELDS } from '../shared/pipedriveFields'
-
 export type DealProduct = {
   code: string
   name: string
@@ -32,6 +30,14 @@ export type DealRecord = {
   products_extras?: DealProduct[]
 }
 
+export type ImportedDealRecord = {
+  id: number
+  pipedriveId: number
+  title: string
+  clientName: string | null
+  products: DealProduct[]
+}
+
 // ==== Helpers HTTP internos ====
 
 const GET = async <T>(url: string) => {
@@ -46,7 +52,22 @@ const POST = async <T>(url: string, body: any) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`POST ${url} -> ${res.status}`)
+  if (!res.ok) {
+    try {
+      const payload = await res.json()
+      const message =
+        typeof payload?.error === 'string' && payload.error.trim().length > 0
+          ? payload.error
+          : null
+      throw new Error(message ?? `POST ${url} -> ${res.status}`)
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error
+      }
+
+      throw new Error(`POST ${url} -> ${res.status}`)
+    }
+  }
   return res.json() as Promise<T>
 }
 
@@ -87,6 +108,14 @@ export async function deleteDeal(id: number) {
  */
 export async function syncDeal(id: number) {
   return POST<{ ok: true }>(`/api/deals/${id}/sync`, {})
+}
+
+export async function fetchImportedDeals() {
+  return GET<ImportedDealRecord[]>('/api/deals/imported')
+}
+
+export async function importDealById(dealId: number) {
+  return POST<ImportedDealRecord>('/api/deals/import', { dealId })
 }
 
 // ==== Helpers de UI ====
