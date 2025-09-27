@@ -1,54 +1,23 @@
-// src/components/deals/DealExtrasList.tsx
+import { DealRecord } from '../../services/deals'
 
-import React from "react";
-import { Table } from "react-bootstrap";
+type Props = { deal: DealRecord }
 
-type Product = {
-  id: number | string;
-  name: string;
-  code?: string;
-  quantity?: number;
-  price?: number;
-  isTraining?: boolean;
-};
-
-interface DealExtrasListProps {
-  products: Product[];
-}
-
-const DealExtrasList: React.FC<DealExtrasListProps> = ({ products }) => {
-  const extras = products.filter(
-    (p) => !p.isTraining && !p.code?.startsWith("form-")
-  );
-
-  if (extras.length === 0) {
-    return <p>No hay productos extra en este deal.</p>;
-  }
-
+export function DealExtrasList({ deal }: Props) {
+  const extras = deal.products_extras ?? []
   return (
-    <Table striped bordered hover size="sm">
-      <thead>
-        <tr>
-          <th>Producto</th>
-          <th>Código</th>
-          <th>Cantidad</th>
-          <th>Precio</th>
-        </tr>
-      </thead>
-      <tbody>
-        {extras.map((prod) => (
-          <tr key={prod.id}>
-            <td>{prod.name}</td>
-            <td>{prod.code || "-"}</td>
-            <td>{prod.quantity ?? "-"}</td>
-            <td>
-              {prod.price !== undefined ? `${prod.price.toFixed(2)} €` : "-"}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
-  );
-};
-
-export default DealExtrasList;
+    <div className="mb-3">
+      <h4>Extras</h4>
+      {extras.length === 0 ? (
+        <p className="text-muted">No hay extras</p>
+      ) : (
+        <ul>
+          {extras.map((p, i) => (
+            <li key={i}>
+              {p.name} ({p.quantity})
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
