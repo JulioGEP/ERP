@@ -1,27 +1,68 @@
 // db/schema.ts
-import { pgTable, serial, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core'
+import {
+  bigint,
+  boolean,
+  integer,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core'
 
-// Tabla deals normalizada
-export const deals = pgTable('deals', {
-  id: serial('id').primaryKey(),
-  title: text('title'),
-  value: integer('value'),
-  pipeline_id: integer('pipeline_id'),
-  org_id: integer('org_id'),
-  person_id: integer('person_id'),
-  add_time: timestamp('add_time', { withTimezone: true }),
-  update_time: timestamp('update_time', { withTimezone: true }),
+export const deals = pgTable(
+  'deals',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey(),
+    pipedriveId: bigint('pipedrive_id', { mode: 'number' }).notNull(),
+    title: text('title').notNull(),
+    pipelineId: integer('pipeline_id').notNull(),
+    status: text('status'),
+    orgId: bigint('org_id', { mode: 'number' }),
+    personId: bigint('person_id', { mode: 'number' }),
+    sede: text('sede'),
+    dealDirection: text('deal_direction'),
+    caes: boolean('caes'),
+    fundae: boolean('fundae'),
+    hotelPernocta: boolean('hotel_pernocta'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => ({
+    pipedriveIdIdx: uniqueIndex('uniq_deals_pipedrive').on(table.pipedriveId),
+  })
+)
 
-  // ✅ Campos normalizados
-  sede: text('sede'),
-  hotel_pernocta: boolean('hotel_pernocta'),
-  deal_direction: text('deal_direction'), // podemos tipar como enum 'in' | 'out'
+export const organizations = pgTable('organizations', {
+  id: bigint('id', { mode: 'number' }).primaryKey(),
+  name: text('name').notNull(),
+  address: text('address'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 })
 
-// Ejemplo de otra tabla ya existente (sessions)
+export const persons = pgTable('persons', {
+  id: bigint('id', { mode: 'number' }).primaryKey(),
+  name: text('name').notNull(),
+  email: text('email'),
+  phone: text('phone'),
+  orgId: bigint('org_id', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+})
+
+export const products = pgTable('products', {
+  id: bigint('id', { mode: 'number' }).primaryKey(),
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  price: integer('price'),
+  dealId: bigint('deal_id', { mode: 'number' }),
+  isTraining: boolean('is_training').default(false),
+  quantity: integer('quantity'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+})
+
 export const sessions = pgTable('sessions', {
   id: serial('id').primaryKey(),
-  dealId: integer('deal_id').references(() => deals.id),
+  dealId: bigint('deal_id', { mode: 'number' }).references(() => deals.id),
   trainerId: integer('trainer_id'),
   sede: text('sede'),
   startAt: timestamp('start_at', { withTimezone: true }),
